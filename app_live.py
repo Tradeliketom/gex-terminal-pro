@@ -94,7 +94,7 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
                 K_fut = (K_etf * multiplier_base) + calibration_offset
                 gamma, call_delta, _ = calculate_greeks(spot_etf, K_etf, T, interest_rate, sigma)
                 
-                # Ponderación GEX combinando OI y el volumen intradía si existe
+                # Ponderación GEX combinando OI y volumen intradía
                 effective_weight = oi + (0.2 * (vol if not pd.isna(vol) else 0))
                 
                 all_results.append({
@@ -163,8 +163,8 @@ if app_mode == "📚 Conceptos / Guía Táctica":
     with tab_m1:
         st.markdown("""
             ### 🟣 Zero Gamma Level (Gamma Flip) & GEX En Directo
-            * **Zero Gamma Level:** Nivel donde el gamma neto cambia de signo. Por encima domina la estabilidad (Market Makers frenan movimientos); por debajo domina la aceleración y el pánico.
-            * **Gexbot Style Live Feed:** Al integrar el volumen intradía junto al Open Interest, el perfil de GEX reacciona y se desplaza en tiempo real conforme los contratos acumulan transacciones durante la sesión bursátil.
+            * **Zero Gamma Level:** Nivel donde el gamma neto cambia de signo. Por encima domina la estabilidad; por debajo domina la aceleración y el pánico.
+            * **Estilo Gexbot Live Feed:** Al integrar el volumen intradía junto al Open Interest, el perfil de GEX reacciona y se desplaza automáticamente conforme los contratos acumulan transacciones en tiempo real.
         """)
     with tab_m2:
         st.markdown("### ⚙️ Equivalencias de Multiplicadores\nConsulta la relación entre ETFs y futuros como MNQ o MES.")
@@ -174,13 +174,12 @@ if app_mode == "📚 Conceptos / Guía Táctica":
 elif app_mode == "🔥 Screener Small Caps & Momentum":
     st.title("🔥 Screener de Small Caps, Float & Short Squeeze")
     st.markdown("Filtra acciones en base a precio, volumen, float y opciones.")
-    # (Screener se mantiene operativo tal cual)
     st.info("Configura los parámetros en la barra lateral de la terminal principal o usa los filtros predeterminados.")
 
 else:
     # --- VISTA TERMINAL EN DIRECTO (ESTILO GEXBOT) ---
-    st.title("⚡ GEX & DEX Institutional Terminal — Live Stream")
-    st.markdown("Terminal de flujo institucional con gráficos sincronizados en tiempo real.")
+    st.title("⚡ GEX & DEX Institutional Terminal — Live Stream (10s)")
+    st.markdown("Terminal de flujo institucional con gráficos duales sincronizados y actualización automática cada 10 segundos.")
 
     with st.sidebar:
         st.header("⚙️ Configuración Live")
@@ -212,9 +211,8 @@ else:
         target_future_price = st.number_input("Precio Live Actual", value=float(spot_fut_live), step=0.05, format="%.2f")
         
         st.markdown("---")
-        st.subheader("⏱️ Sincronización en Directo")
-        live_mode = st.toggle("Activar Auto-Refresh en Vivo (Live)", value=False)
-        refresh_rate = st.slider("Frecuencia de Actualización (Segundos)", 5, 60, 10)
+        st.subheader("⏱️ Automatización 10s")
+        live_mode = st.toggle("Activar Auto-Refresh (10s en Vivo)", value=True)
         
         intraday_interval = st.selectbox("Temporalidad Gráfico Intradía", ["1m", "5m", "15m"], index=1)
         
@@ -226,113 +224,107 @@ else:
             default_selection = list(expirations[:min(2, len(expirations))])
             selected_expirations = st.multiselect("Vencimientos", expirations, default=default_selection)
             
-        calcular_btn = st.button("🚀 Iniciar Feed en Directo")
+        calcular_btn = st.button("🚀 Iniciar / Forzar Actualización")
 
     if calcular_btn or live_mode:
         st.session_state['live_active'] = True
 
     if st.session_state.get('live_active', False) and selected_expirations:
         
-        # Contenedor dinámico para refrescar sin parpadeos molestos de toda la página
-        placeholder_live = st.empty()
-        
-        with placeholder_live.container():
-            with st.spinner("Sincronizando feed de mercado y calculando GEX dinámico..."):
-                tk_etf, spot_etf, _, _ = fetch_market_data(etf_ticker, fut_ticker)
-                
-                # Actualizar precio spot en vivo desde yfinance automáticamente si está activo
-                try:
-                    tk_live_check = yf.Ticker(fut_ticker)
-                    live_hist = tk_live_check.history(period="1d", interval="1m")
-                    if not live_hist.empty:
-                        target_future_price = float(live_hist['Close'].iloc[-1])
-                except:
-                    pass
+        with st.spinner("Sincronizando feed de mercado y calculando GEX dinámico..."):
+            tk_etf, spot_etf, _, _ = fetch_market_data(etf_ticker, fut_ticker)
+            
+            try:
+                tk_live_check = yf.Ticker(fut_ticker)
+                live_hist = tk_live_check.history(period="1d", interval="1m")
+                if not live_hist.empty:
+                    target_future_price = float(live_hist['Close'].iloc[-1])
+            except:
+                pass
 
-                df_metrics, call_wall, put_wall, gamma_flip, total_gex, spot_fut, iv_skew, calc_base, cal_offset = process_multi_expiry_metrics(
-                    tk_etf, selected_expirations, spot_etf, target_future_price, multiplier_base, min_open_interest, 0.05
+            df_metrics, call_wall, put_wall, gamma_flip, total_gex, spot_fut, iv_skew, calc_base, cal_offset = process_multi_expiry_metrics(
+                tk_etf, selected_expirations, spot_etf, target_future_price, multiplier_base, min_open_interest, 0.05
+            )
+            
+            if df_metrics.empty:
+                st.warning("No hay datos suficientes para los filtros seleccionados.")
+            else:
+                min_strike = spot_fut * (1 - range_pct)
+                max_strike = spot_fut * (1 + range_pct)
+                df_filtered = df_metrics[(df_metrics['strike'] >= min_strike) & (df_metrics['strike'] <= max_strike)].copy()
+                if df_filtered.empty: df_filtered = df_metrics
+
+                tk_chart = yf.Ticker(fut_ticker)
+                df_hist_intra = tk_chart.history(period="1d", interval=intraday_interval)
+                if df_hist_intra.empty:
+                    df_hist_intra = tk_chart.history(period="5d", interval="15m")
+
+                # Métricas superiores del panel institucional
+                c1, c2, c3, c4, c5 = st.columns(5)
+                c1.metric("Live Spot", f"{spot_fut:,.2f}")
+                c2.metric("Zero Gamma", f"{gamma_flip:,.2f}", delta="Flip")
+                c3.metric("Call Wall", f"{call_wall:,.2f}", delta="Techo", delta_color="inverse")
+                c4.metric("Put Wall", f"{put_wall:,.2f}", delta="Soporte")
+                c5.metric("IV Skew", f"{iv_skew:+.2f}%")
+                
+                st.markdown("---")
+
+                # --- GRÁFICO COMBINADO ESTILO GEXBOT (Velas a la Izquierda / GEX Barras Horizontales a la Derecha) ---
+                fig = make_subplots(
+                    rows=1, cols=2, 
+                    column_widths=[0.55, 0.45], 
+                    shared_yaxes=True,
+                    horizontal_spacing=0.02,
+                    subplot_titles=(f"Evolución Precio ({intraday_interval})", "Perfil GEX por Strikes (Live)")
                 )
+
+                # 1. Gráfico de Velas Intradía (Izquierda)
+                if not df_hist_intra.empty:
+                    fig.add_trace(go.Candlestick(
+                        x=df_hist_intra.index,
+                        open=df_hist_intra['Open'], high=df_hist_intra['High'],
+                        low=df_hist_intra['Low'], close=df_hist_intra['Close'],
+                        increasing_line_color='#22c55e', decreasing_line_color='#ef476f',
+                        name="Precio"
+                    ), row=1, col=1)
+
+                # 2. Gráfico de Barras GEX (Derecha)
+                fig.add_trace(go.Bar(
+                    x=df_filtered['gex'],
+                    y=df_filtered['strike'],
+                    orientation='h',
+                    name="GEX",
+                    marker=dict(
+                        color=np.where(df_filtered['gex'] >= 0, '#00b4d8', '#ff4d6d'),
+                        line=dict(color='rgba(255,255,255,0.1)', width=1)
+                    ),
+                    hovertemplate='Strike: %{y:,.2f}<br>GEX: $%{x:,.0f}<extra></extra>'
+                ), row=1, col=2)
+
+                # Líneas horizontales de referencia en ambos subgráficos sincronizados
+                for c_idx in [1, 2]:
+                    fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", line_width=1.5, row=1, col=c_idx)
+                    fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#c084fc", line_width=1.5, row=1, col=c_idx)
+                    fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", line_width=1.5, row=1, col=c_idx)
+                    fig.add_hline(y=put_wall, line_dash="solid", line_color="#ff9f1c", line_width=1.5, row=1, col=c_idx)
+
+                fig.update_layout(
+                    height=700, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
+                    font=dict(color="#ffffff", family="Arial, sans-serif", size=11),
+                    xaxis=dict(showgrid=True, gridcolor='#21262d'),
+                    yaxis=dict(showgrid=True, gridcolor='#21262d', autorange="reversed", tickformat=",.2f"),
+                    xaxis2=dict(showgrid=True, gridcolor='#21262d', tickformat="$,.0f"),
+                    showlegend=False, margin=dict(l=20, r=20, t=40, b=20)
+                )
+
+                st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False})
                 
-                if df_metrics.empty:
-                    st.warning("No hay datos suficientes para los filtros seleccionados.")
-                else:
-                    min_strike = spot_fut * (1 - range_pct)
-                    max_strike = spot_fut * (1 + range_pct)
-                    df_filtered = df_metrics[(df_metrics['strike'] >= min_strike) & (df_metrics['strike'] <= max_strike)].copy()
-                    if df_filtered.empty: df_filtered = df_metrics
+                st.caption(f"⚡ Streaming Activo | Última actualización: {datetime.now().strftime('%H:%M:%S')} — Recargando automáticamente cada **10 segundos**.")
 
-                    # Obtener histórico intradía de velas para el gráfico tipo Gexbot
-                    tk_chart = yf.Ticker(fut_ticker)
-                    df_hist_intra = tk_chart.history(period="1d", interval=intraday_interval)
-                    if df_hist_intra.empty:
-                        df_hist_intra = tk_chart.history(period="5d", interval="15m")
-
-                    # Métricas superiores estilo panel de control institucional
-                    c1, c2, c3, c4, c5 = st.columns(5)
-                    c1.metric("Live Spot", f"{spot_fut:,.2f}")
-                    c2.metric("Zero Gamma", f"{gamma_flip:,.2f}", delta="Flip")
-                    c3.metric("Call Wall", f"{call_wall:,.2f}", delta="Techo", delta_color="inverse")
-                    c4.metric("Put Wall", f"{put_wall:,.2f}", delta="Soporte")
-                    c5.metric("IV Skew", f"{iv_skew:+.2f}%")
-                    
-                    st.markdown("---")
-
-                    # --- CREACIÓN DE GRÁFICO COMBINADO ESTILO GEXBOT (Velas a la izquierda / GEX horizontal a la derecha) ---
-                    fig = make_subplots(
-                        rows=1, cols=2, 
-                        column_widths=[0.55, 0.45], 
-                        shared_yaxes=True,
-                        horizontal_spacing=0.02,
-                        subplot_titles=(f"Evolución Precio ({intraday_interval})", "Perfil GEX por Strikes (Live)")
-                    )
-
-                    # 1. Gráfico de Velas Intradía (Izquierda)
-                    if not df_hist_intra.empty:
-                        fig.add_trace(go.Candlestick(
-                            x=df_hist_intra.index,
-                            open=df_hist_intra['Open'], high=df_hist_intra['High'],
-                            low=df_hist_intra['Low'], close=df_hist_intra['Close'],
-                            increasing_line_color='#22c55e', decreasing_line_color='#ef476f',
-                            name="Precio"
-                        ), row=1, col=1)
-
-                    # 2. Gráfico de Barras GEX (Derecha)
-                    fig.add_trace(go.Bar(
-                        x=df_filtered['gex'],
-                        y=df_filtered['strike'],
-                        orientation='h',
-                        name="GEX",
-                        marker=dict(
-                            color=np.where(df_filtered['gex'] >= 0, '#00b4d8', '#ff4d6d'),
-                            line=dict(color='rgba(255,255,255,0.1)', width=1)
-                        ),
-                        hovertemplate='Strike: %{y:,.2f}<br>GEX: $%{x:,.0f}<extra></extra>'
-                    ), row=1, col=2)
-
-                    # Líneas horizontales de referencia en ambos paneles
-                    for c_idx in [1, 2]:
-                        fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", line_width=1.5, row=1, col=c_idx)
-                        fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#c084fc", line_width=1.5, row=1, col=c_idx)
-                        fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", line_width=1.5, row=1, col=c_idx)
-                        fig.add_hline(y=put_wall, line_dash="solid", line_color="#ff9f1c", line_width=1.5, row=1, col=c_idx)
-
-                    fig.update_layout(
-                        height=700, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
-                        font=dict(color="#ffffff", family="Arial, sans-serif", size=11),
-                        xaxis=dict(showgrid=True, gridcolor='#21262d'),
-                        yaxis=dict(showgrid=True, gridcolor='#21262d', autorange="reversed", tickformat=",.2f"),
-                        xaxis2=dict(showgrid=True, gridcolor='#21262d', tickformat="$,.0f"),
-                        showlegend=False, margin=dict(l=20, r=20, t=40, b=20)
-                    )
-
-                    st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False})
-                    
-                    st.caption(f"⚡ Estado del Streaming: Activo | Última actualización: {datetime.now().strftime('%H:%M:%S')} | Refrescando cada {refresh_rate}s")
-
-        # Bucle de recarga automática en vivo si está activado el toggle
+        # Bucle estricto de recarga automática cada 10 segundos
         if live_mode:
-            time.sleep(refresh_rate)
+            time.sleep(10)
             st.rerun()
             
     else:
-        st.info("👈 Configura los parámetros en la barra lateral, selecciona los vencimientos y pulsa **Iniciar Feed en Directo** o activa el modo Live.")
+        st.info("👈 Configura los parámetros en la barra lateral, selecciona los vencimientos y pulsa **Iniciar / Forzar Actualización**.")
