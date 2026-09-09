@@ -67,7 +67,6 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
                 K_etf, sigma, oi = row['strike'], row['impliedVolatility'], row['openInterest']
                 if pd.isna(sigma) or sigma == 0 or pd.isna(oi): continue
                 
-                # Capturar IVs cercanas al dinero para el Skew
                 if abs(K_etf - spot_etf) / spot_etf < 0.05:
                     call_ivs.append(sigma)
                     
@@ -112,7 +111,7 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
     
     avg_call_iv = np.mean(call_ivs) if call_ivs else 0.0
     avg_put_iv = np.mean(put_ivs) if put_ivs else 0.0
-    iv_skew = (avg_put_iv - avg_call_iv) * 100 # Skew en puntos porcentuales
+    iv_skew = (avg_put_iv - avg_call_iv) * 100
     
     return df_grouped, call_wall, put_wall, gamma_flip, df['gex'].sum(), target_future_price, iv_skew
 
@@ -121,7 +120,7 @@ st.markdown("Terminal cuantitativa multi-expiración avanzada para trading de fu
 
 with st.expander("📖 GUÍA TÁCTICA: Muros Institucionales y Régimen de Gamma", expanded=False):
     st.markdown("""
-    * **Put Wall (Soporte Principal 🟢):** Zona de cobertura masiva de puts. Alta probabilidad de rebote institucional.
+    * **Put Wall (Soporte Principal 🟢):** Zona masiva de cobertura bajista. Alta probabilidad de rebote institucional.
     * **Call Wall (Techo de Resistencia 🔴):** Resistencia magnética de corto plazo; ideal para tomas de beneficios.
     * **Gamma Flip (Pivote 🟣):** Frontera de régimen. Por encima = mercado en rango (estabilizador). Por debajo = mercado direccional y volátil.
     * **IV Skew (Sesgo):** Si las Puts encarecen su volatilidad respecto a las Calls, alerta de cobertura bajista institucional.
@@ -179,16 +178,14 @@ if st.session_state.get('loaded', False) and selected_expirations:
         if df_metrics.empty:
             st.warning("No hay suficiente información para las fechas seleccionadas.")
         else:
-            # Filtrar por rango dinámico (Zoom) alrededor del precio del futuro
             min_strike = spot_fut * (1 - range_pct)
             max_strike = spot_fut * (1 + range_pct)
             df_filtered = df_metrics[(df_metrics['strike'] >= min_strike) & (df_metrics['strike'] <= max_strike)].copy()
             
             if df_filtered.empty:
-                df_filtered = df_metrics # fallback si el rango es muy estrecho
+                df_filtered = df_metrics
                 
-            # Determinar régimen de gamma
-            regimen = "🟢 GAMMA POSITIVO (Rango / Rebotes)" if spot_fut >= gamma_flip else "🔴 GAMMA NEGATIVO (Direccional / Volátil)"
+            regimen = "🟢 GAMMA POSITIVO (Rango / Rebotes Estabilizadores)" if spot_fut >= gamma_flip else "🔴 GAMMA NEGATIVO (Direccional / Alta Volatilidad)"
             
             st.markdown(f"### 📊 Dashboard Institucional [{asset_choice}] &nbsp;&nbsp;|&nbsp;&nbsp; *Actualizado: {datetime.now().strftime('%H:%M:%S')}*")
             
@@ -199,8 +196,44 @@ if st.session_state.get('loaded', False) and selected_expirations:
             c4.metric("Put Wall (Suelo)", f"{put_wall:,.2f}", delta="Soporte")
             c5.metric("IV Skew (Puts-Calls)", f"{iv_skew:+.2f}%")
             
-            # Semáforo de Régimen de Gamma
             st.info(f"**Régimen de Mercado Actual:** {regimen}")
+            
+            # --- NUEVO MÓDULO: PLAN DE ACCIÓN TÁCTICO EN VIVO ---
+            st.markdown("---")
+            st.markdown("### 🎯 Plan de Acción Táctico & Recomendación Operativa")
+            
+            dist_call_wall = (call_wall - spot_fut) / spot_fut * 100
+            dist_put_wall = (spot_fut - put_wall) / spot_fut * 100
+            
+            col_t1, col_t2 = st.columns(2)
+            
+            with col_t1:
+                st.markdown("#### 🧭 Sesgo Estructural & Régimen")
+                if spot_fut >= gamma_flip:
+                    st.success("**Estrategia Recomendada (Rango):**\n* El precio está sobre el Gamma Flip. Los Market Makers actúan como estabilizadores (compran caídas/venden subidas).\n* **Acción:** Buscar compras en acercamientos a soportes o Put Wall, y tomas de beneficios o cortos rápidos en resistencias.")
+                else:
+                    st.error("**Estrategia Recomendada (Direccional):**\n* El precio está bajo el Gamma Flip. Entorno inestable con aceleración de precios.\n* **Acción:** Evitar contratendencias largas. Seguir la tendencia de corto plazo o operar rupturas con stops ajustados.")
+                
+                if iv_skew > 0:
+                    st.warning(f"**Alerta IV Skew (+{iv_skew:.1f}%):** Las opciones de venta están más caras. Mayor demanda institucional de cobertura bajista.")
+                else:
+                    st.info(f"**IV Skew Neutral ({iv_skew:.1f}%):** Sin tensiones extremas en el sesgo de puts.")
+
+            with col_t2:
+                st.markdown("#### 📍 Proximidad a Muros & Disparadores")
+                
+                # Evaluamos proximidad a menos del 0.4%
+                near_call = abs(spot_fut - call_wall) / spot_fut <= 0.004
+                near_put = abs(spot_fut - put_wall) / spot_fut <= 0.004
+                
+                if near_call:
+                    st.warning(f"⚠️ **¡ZONA DE ALERTA EN CALL WALL!**\n* Precio a **+{dist_call_wall:.2f}%** del techo ({call_wall:,.2f}).\n* **Acción:** Alta probabilidad de freno o rechazo bajista. Si rompe con volumen, buscar continuidad alcista (*Gamma Squeeze*).")
+                elif near_put:
+                    st.warning(f"⚠️ **¡ZONA DE ALERTA EN PUT WALL!**\n* Precio a **-{dist_put_wall:.2f}%** del suelo ({put_wall:,.2f}).\n* **Acción:** Zona clave de defensa institucional. Vigilar formaciones de giro en largo para rebote.")
+                else:
+                    st.info(f"ℹ️ **Distancias Actuales a Límites:**\n* Distancia al Techo (Call Wall): **+{dist_call_wall:.2f}%**\n* Distancia al Suelo (Put Wall): **-{dist_put_wall:.2f}%**\n* *El precio opera en zona intermedia sin tests inmediatos a los muros principales.*")
+            # -----------------------------------------------------
+
             st.markdown("---")
             
             col_target = 'gex' if "Gamma" in metric_view else 'dex'
