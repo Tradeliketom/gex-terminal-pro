@@ -129,25 +129,28 @@ with st.sidebar:
     st.markdown("---")
 
 if app_mode == "🔥 Screener Small Caps & Momentum":
-    st.title("🔥 Screener de Small Caps y Momentum (Estilo Trade Ideas)")
-    st.markdown("Filtra automáticamente aquellas acciones con opciones líquidas que cumplen con criterios estrictos de **volumen, precio y cambio porcentual** antes de analizar sus muros.")
+    st.title("🔥 Screener de Small Caps, Float & Short Squeeze")
+    st.markdown("Filtra acciones en base a precio, volumen, cambio porcentual, **Float (acciones libres)** y **Short Float (%)** para detectar catalizadores explosivos.")
     
-    with st.expander("⚙️ Filtros del Scanner de Mercado", expanded=True):
-        col_f1, col_f2 = st.columns(2)
+    with st.expander("⚙️ Filtros Avanzados del Scanner", expanded=True):
+        col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1:
             min_price = st.number_input("Precio Mínimo ($)", value=1.0, step=0.5)
-            max_price = st.number_input("Precio Máximo ($)", value=50.0, step=1.0)
-            min_vol = st.number_input("Volumen Mínimo Diario", value=500000, step=100000)
+            max_price = st.number_input("Precio Máximo ($)", value=30.0, step=1.0)
+            min_vol = st.number_input("Volumen Mínimo Diario", value=300000, step=100000)
         with col_f2:
-            min_change_pct = st.number_input("Variación Mínima del Día (%)", value=2.0, step=0.5)
-            min_open_interest_scr = st.number_input("Open Interest Opciones Mín.", value=50, step=10)
+            min_change_pct = st.number_input("Variación Mínima Día (%)", value=2.0, step=0.5)
+            min_open_interest_scr = st.number_input("Open Interest Opciones Mín.", value=30, step=10)
+        with col_f3:
+            max_float_shares = st.number_input("Float Máximo (Millones)", value=50.0, step=5.0, help="Filtra empresas con bajo número de acciones flotantes (ej. < 50M)")
+            min_short_float = st.number_input("Short Float Mínimo (%)", value=5.0, step=1.0, help="Porcentaje de acciones vendidas en corto (ej. > 5%)")
             
-    st.markdown("### 📋 Universo Inicial de Small Caps / Activos Calientes")
-    default_small_caps = ["IWM", "GME", "AMC", "RIOT", "MARA", "PLTR", "SOFI", "NIO", "COIN", "HOOD", "BITF", "HUT"]
+    st.markdown("### 📋 Universo Inicial de Small Caps / Watchlist")
+    default_small_caps = ["IWM", "GME", "AMC", "RIOT", "MARA", "PLTR", "SOFI", "NIO", "COIN", "HOOD", "BITF", "HUT", "HLGN", "SENS"]
     watchlist_input = st.text_area("Lista de Tickers (separados por comas)", value=", ".join(default_small_caps))
     watchlist = [t.strip().upper() for t in watchlist_input.split(",") if t.strip()]
     
-    if st.button("🚀 Filtrar y Escanear Small Caps en Vivo"):
+    if st.button("🚀 Escanear Mercado y Estructuras"):
         screener_data = []
         progress_bar = st.progress(0)
         total_items = len(watchlist)
@@ -164,45 +167,52 @@ if app_mode == "🔥 Screener Small Caps & Momentum":
                 day_vol = hist['Volume'].iloc[-1]
                 change_pct = ((spot - prev_close) / prev_close) * 100
                 
+                # Obtener métricas fundamentales de Yahoo Finance (Float y Short Float)
+                info = tk.info
+                float_shares = info.get('floatShares', 0)
+                float_millions = (float_shares / 1e6) if float_shares else 0.0
+                
+                short_ratio_pct = (info.get('shortPercentOfFloat', 0.0) or 0.0) * 100
+                
                 # --- APLICAR FILTROS DE SCREENER ---
                 if not (min_price <= spot <= max_price): continue
                 if day_vol < min_vol: continue
                 if change_pct < min_change_pct: continue
+                if float_millions > 0 and float_millions > max_float_shares: continue
+                if short_ratio_pct > 0 and short_ratio_pct < min_short_float: continue
                 
                 exps = tk.options
-                if not exps:
-                    continue
+                sub_exps = list(exps[:2]) if exps else []
                 
-                sub_exps = list(exps[:2]) # Tomar los 2 vencimientos más cercanos
-                df_res, c_wall, p_wall, g_flip, _, _, skew, _, _ = process_multi_expiry_metrics(
-                    tk, sub_exps, spot, spot, 1.0, min_oi=min_open_interest_scr, interest_rate=0.05
-                )
+                c_wall, p_wall, g_flip, skew = 0.0, 0.0, spot, 0.0
+                if sub_exps:
+                    df_res, c_wall, p_wall, g_flip, _, _, skew, _, _ = process_multi_expiry_metrics(
+                        tk, sub_exps, spot, spot, 1.0, min_oi=min_open_interest_scr, interest_rate=0.05
+                    )
                 
-                if not df_res.empty:
-                    dist_put_pct = (spot - p_wall) / spot * 100
-                    dist_call_pct = (c_wall - spot) / spot * 100
-                    
-                    if spot <= p_wall * 1.005 or (spot >= g_flip and dist_put_pct < 1.5):
-                        signal = "🟢 LONG SOPORTE (Rebote)"
-                    elif spot >= c_wall * 0.995 or spot < g_flip:
-                        signal = "🔴 SHORT / TECHO (Resistencia)"
-                    else:
-                        signal = "🟡 RANGO / MOMENTUM"
+                dist_put_pct = (spot - p_wall) / spot * 100 if p_wall > 0 else 0.0
+                
+                if p_wall > 0 and spot <= p_wall * 1.005:
+                    signal = "🟢 LONG SOPORTE"
+                elif c_wall > 0 and spot >= c_wall * 0.995:
+                    signal = "🔴 SHORT / TECHO"
+                else:
+                    signal = "🟡 MOMENTUM ACTIVO"
                         
-                    regime = "Gamma Positivo (+)" if spot >= g_flip else "Gamma Negativo (-)"
-                    
-                    screener_data.append({
-                        "Ticker": ticker,
-                        "Spot ($)": round(spot, 2),
-                        "Cambio Día (%)": round(change_pct, 2),
-                        "Volumen": f"{day_vol:,}",
-                        "Señal Táctica": signal,
-                        "Régimen Gamma": regime,
-                        "Put Wall ($)": round(p_wall, 2),
-                        "Dist. Put (%)": round(dist_put_pct, 2),
-                        "Call Wall ($)": round(c_wall, 2),
-                        "IV Skew (%)": round(skew, 2)
-                    })
+                regime = "Gamma Positivo (+)" if spot >= g_flip else "Gamma Negativo (-)"
+                
+                screener_data.append({
+                    "Ticker": ticker,
+                    "Spot ($)": round(spot, 2),
+                    "Cambio (%)": round(change_pct, 2),
+                    "Volumen": f"{day_vol:,}",
+                    "Float (M)": round(float_millions, 2),
+                    "Short Float (%)": round(short_ratio_pct, 1),
+                    "Señal Táctica": signal,
+                    "Régimen": regime,
+                    "Put Wall": round(p_wall, 2) if p_wall > 0 else "N/D",
+                    "Call Wall": round(c_wall, 2) if c_wall > 0 else "N/D"
+                })
             except Exception:
                 continue
             progress_bar.progress((i + 1) / total_items)
@@ -211,7 +221,7 @@ if app_mode == "🔥 Screener Small Caps & Momentum":
         
         if screener_data:
             df_screener = pd.DataFrame(screener_data)
-            st.success(f"¡Filtros aplicados con éxito! Se encontraron **{len(df_screener)} Small Caps** activas cumpliendo los criterios.")
+            st.success(f"¡Escaneo completado! Se detectaron **{len(df_screener)} Small Caps** aptas bajo los filtros de Float y Momento.")
             
             st.dataframe(
                 df_screener.style.map(
@@ -220,23 +230,41 @@ if app_mode == "🔥 Screener Small Caps & Momentum":
                 ),
                 use_container_width=True
             )
+            
+            st.markdown("---")
+            st.subheader("📊 Análisis Gráfico de Estructura por Ticker")
+            tickers_found = df_screener["Ticker"].tolist()
+            selected_ticker_chart = st.selectbox("Selecciona una Small Cap de la lista para ver su estructura de precios:", tickers_found)
+            
+            if selected_ticker_chart:
+                tk_chart = yf.Ticker(selected_ticker_chart)
+                df_history = tk_chart.history(period="1mo") # Último mes de estructura
+                
+                if not df_history.empty:
+                    fig_struct = go.Figure()
+                    fig_struct.add_trace(go.Bar(
+                        x=df_history.index,
+                        y=df_history['Close'],
+                        name="Precio Cierre",
+                        marker_color=np.where(df_history['Close'] >= df_history['Open'], '#22c55e', '#ef476f')
+                    ))
+                    fig_struct.update_layout(
+                        title=dict(text=f"<b>Estructura Diaria de Precios — {selected_ticker_chart} (Último Mes)</b>", font=dict(size=14, color="#ffffff")),
+                        xaxis_title="Fecha",
+                        yaxis_title="Precio ($)",
+                        height=400, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
+                        margin=dict(l=30, r=30, t=40, b=30)
+                    )
+                    st.plotly_chart(fig_struct, use_container_width=True)
         else:
-            st.warning("Ningún ticker de la lista cumple simultáneamente con los filtros de precio, volumen, cambio porcentual y liquidez de opciones exigidos hoy.")
+            st.warning("Ningún ticker cumple simultáneamente con todos los filtros estrictos de precio, volumen, cambio, Float bajo y Short Float exigidos.")
     else:
-        st.info("👈 Ajusta los filtros de premarket/volumen y pulsa **Filtrar y Escanear Small Caps en Vivo**.")
+        st.info("👈 Configura tus umbrales de Float y presiona **Escanear Mercado y Estructuras**.")
 
 else:
     # --- VISTA TERMINAL INDIVIDUAL ORIGINAL ---
     st.title("⚡ GEX & DEX Institutional Terminal Pro")
     st.markdown("Terminal cuantitativa multi-expiración adaptada para **móvil, índices y small caps**.")
-
-    with st.expander("📖 GUÍA TÁCTICA Y MANUAL DE CONCEPTOS INSTITUCIONALES", expanded=False):
-        st.markdown("""
-        ### 🚦 1. Semáforo de Dirección Táctica
-        * **🟢 POSICIÓN ALCISTA (LONG):** Ideal para buscar compras si el precio está apoyado sobre el suelo institucional (**Put Wall**).
-        * **🔴 POSICIÓN BAJISTA (SHORT):** Precaución o cortos si el precio perfora soportes o se acerca al techo con alta volatilidad.
-        * **🟡 RANGO / ESPERAR:** El precio está en tierra de nadie entre muros.
-        """, unsafe_allow_html=True)
 
     with st.sidebar:
         st.header("⚙️ Configuración del Activo")
@@ -269,7 +297,6 @@ else:
             expirations = []
 
         target_future_price = st.number_input("Precio Live del Activo", value=float(spot_fut_live), step=0.05, format="%.2f")
-        
         interest_rate = st.slider("Tasa Libre de Riesgo (%)", 0.0, 10.0, 5.0) / 100.0
         metric_view = st.selectbox("Métrica Principal", ["Gamma Exposure (GEX)", "Delta Exposure (DEX)"])
         
@@ -308,13 +335,12 @@ else:
                     df_filtered = df_metrics
                     
                 dist_to_put = (spot_fut - put_wall) / spot_fut * 100
-                dist_to_call = (call_wall - spot_fut) / spot_fut * 100
                 
                 if spot_fut <= put_wall * 1.003 or (spot_fut >= gamma_flip and dist_to_put < 1.5):
                     semaforo_emoji = "🟢"
                     semaforo_texto = "POSICIÓN ALCISTA (BUSCAR COMPRAS / LONG)"
                     semaforo_color = "#238636"
-                    consejo_dir = "El precio está apoyado sobre el suelo institucional (Put Wall) o zona de rebote."
+                    consejo_dir = "El precio está apoyado sobre el suelo institucional (Put Wall)."
                 elif spot_fut >= call_wall * 0.997 or spot_fut < gamma_flip:
                     semaforo_emoji = "🔴"
                     semaforo_texto = "PRECAUCIÓN / SESGO BAJISTA (SHORT O COBERTURA)"
@@ -324,7 +350,7 @@ else:
                     semaforo_emoji = "🟡"
                     semaforo_texto = "MERCADO EN RANGO (ESPERAR EXTREMOS)"
                     semaforo_color = "#9e6a03"
-                    consejo_dir = "El precio está en tierra de nadie entre el Put Wall y el Call Wall."
+                    consejo_dir = "El precio está en tierra de nadie."
 
                 st.markdown(f"### 📊 Dashboard [{fut_ticker}] &nbsp;&nbsp;|&nbsp;&nbsp; *{datetime.now().strftime('%H:%M:%S')}*")
                 
@@ -341,13 +367,6 @@ else:
                 c3.metric("Call Wall", f"{call_wall:,.2f}", delta="Resistencia", delta_color="inverse")
                 c4.metric("Put Wall", f"{put_wall:,.2f}", delta="Soporte")
                 c5.metric("IV Skew", f"{iv_skew:+.2f}%")
-                
-                with st.expander("⚙️ Ver detalles de Conversión y Multiplicador Activo", expanded=False):
-                    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-                    col_m1.metric("Spot ETF Subyacente", f"{spot_etf:,.2f}")
-                    col_m2.metric("Multiplicador Base", f"{multiplier_base:,.2f}")
-                    col_m3.metric("Base Calculada", f"{calc_base:,.2f}")
-                    col_m4.metric("Offset de Calibración", f"{cal_offset:+,.2f}")
                 
                 st.markdown("---")
                 
@@ -383,8 +402,5 @@ else:
                 )
                 
                 st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True, 'modeBarButtonsToRemove': ['lasso2d', 'select2d', 'autoScale2d']})
-                
-                with st.expander("🔍 Ver desglose tabular completo"):
-                    st.dataframe(df_filtered.style.format({'strike': '{:,.2f}', 'gex': '${:,.2f}', 'dex': '${:,.2f}'}), use_container_width=True)
     else:
         st.info("👈 Selecciona un activo preconfigurado o ajusta los parámetros en la barra lateral y pulsa **Actualizar Terminal**.")
