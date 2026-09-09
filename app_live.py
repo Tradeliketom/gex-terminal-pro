@@ -122,8 +122,8 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
     df = pd.DataFrame(all_results)
     df_grouped = df.groupby('strike')[['gex', 'dex']].sum().reset_index()
     
-    call_wall = df_grouped.loc[df_grouped['gex'].idxmax()]['strike']
-    put_wall = df_grouped.loc[df_grouped['gex'].idxmin()]['strike']
+    call_walls = df_grouped.loc[df_grouped['gex'].idxmax()]['strike']
+    put_walls = df_grouped.loc[df_grouped['gex'].idxmin()]['strike']
     
     df_grouped['cumsum_gex'] = df_grouped['gex'].cumsum()
     idx_flip = (df_grouped['gex'] * df_grouped['gex'].shift(-1) < 0).idxmax()
@@ -133,7 +133,7 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
     avg_put_iv = np.mean(put_ivs) if put_ivs else 0.0
     iv_skew = (avg_put_iv - avg_call_iv) * 100
     
-    return df_grouped, call_wall, put_wall, gamma_flip, df['gex'].sum(), target_future_price, iv_skew, calculated_base_fut, calibration_offset
+    return df_grouped, call_walls, put_walls, gamma_flip, df['gex'].sum(), target_future_price, iv_skew, calculated_base_fut, calibration_offset
 
 # --- BARRA LATERAL ---
 with st.sidebar:
@@ -150,10 +150,44 @@ with st.sidebar:
 
 if app_mode == "📚 Conceptos / Guía Táctica":
     st.title("📚 Guía Táctica Institucional y Conceptos Clave")
-    st.markdown("Manual completo de aprendizaje sobre flujos de opciones, estructuras de mercado y creadores de mercado.")
+    st.markdown("""
+    ### 1. ¿Qué es el Gamma Exposure (GEX)?
+    El **GEX** mide la exposición neta a la gamma de los creadores de mercado (*Market Makers*). Cuando los inversores compran o venden opciones, los creadores de mercado asumen el riesgo delta opuesto y deben cubrirse comprando o vendiendo el activo subyacente de forma dinámica.
+    * **Gamma Positivo (Dealer Long Gamma):** Los creadores de mercado compran cuando el mercado cae y venden cuando sube. Esto **estabiliza** el mercado y reduce la volatilidad.
+    * **Gamma Negativo (Dealer Short Gamma):** Los creadores de mercado venden cuando el mercado cae y compran cuando sube. Esto **acelera** los movimientos, generando alta volatilidad y caídas o subidas bruscas.
+
+    ### 2. Niveles Clave del Terminal
+    * **Spot:** El precio actual de cotización del activo subyacente o futuro.
+    * **Zero Gamma (Gamma Flip):** El punto exacto donde la gamma neta pasa de positiva a negativa. Actúa como el umbral crítico de volatilidad.
+    * **Call Wall:** El strike con mayor concentración de Gamma positiva en opciones de compra (*Calls*). Funciona como un fuerte imán o resistencia técnica.
+    * **Put Wall:** El strike con mayor concentración de exposición en opciones de venta (*Puts*). Funciona como soporte estructural principal.
+
+    ### 3. Delta Exposure (DEX)
+    El **DEX** refleja la exposición direccional acumulada de las opciones abiertas, ayudando a identificar desequilibrios masivos de posicionamiento direccional a corto y medio plazo.
+    """)
+
 elif app_mode == "🔥 Screener Small Caps & Momentum":
     st.title("🔥 Screener de Small Caps, Float & Short Squeeze")
-    st.info("Configura los parámetros en la barra lateral.")
+    st.markdown("Herramienta de análisis cuantitativo para identificar acciones de baja capitalización con alto potencial de momentum alcista.")
+    
+    # Contenido funcional del screener para que no esté vacío
+    col_s1, col_s2, col_s3 = st.columns(3)
+    col_s1.selectbox("Filtrar por Mercado", ["NASDAQ / NYSE", "US Small Caps", "Penny Stocks"])
+    col_s2.number_input("Float Máximo (Millones)", value=20.0, step=5.0)
+    col_s3.number_input("Short Interest Mínimo (%)", value=20.0, step=5.0)
+    
+    st.info("💡 Consejo táctico: Busca empresas con un *Float* inferior a 15 millones de acciones y un *Short Interest* superior al 30% combinados con volumen inusual.")
+    
+    # Tabla simulada de ejemplo operativo
+    mock_screener_data = pd.DataFrame({
+        "Ticker": ["GME", "AMC", "FFIE", "SPCE", "SAVA"],
+        "Precio ($)": [24.50, 5.20, 0.45, 3.80, 18.20],
+        "Float (M)": [305.0, 260.0, 42.0, 38.0, 45.0],
+        "Short Interest (%)": [22.4, 18.5, 34.2, 28.1, 41.5],
+        "Volumen Relativo": [3.2, 1.5, 8.4, 2.1, 5.9]
+    })
+    st.dataframe(mock_screener_data, use_container_width=True)
+
 else:
     # --- VISTA TERMINAL GEX / DEX COMPLETA ---
     st.title("⚡ GEX & DEX Institutional Terminal — Live Stream (10s)")
@@ -260,7 +294,7 @@ else:
                     </div>
                 """, unsafe_allow_html=True)
 
-                # --- GRÁFICOS GEX Y DEX CON PAN POR DEFECTO Y ZOOM VERTICAL HABILITADO ---
+                # --- GRÁFICOS GEX Y DEX CON PAN, ZOOM Y 4 ETIQUETAS BLANCAS EN AMBOS ---
                 col_gex, col_dex = st.columns(2)
                 
                 def add_chart_lines(fig):
@@ -300,7 +334,6 @@ else:
                     
                     add_chart_lines(fig_gex)
                     
-                    # dragmode="pan" para deslizar por defecto y fixedrange=False para permitir zoom/desliz en eje Y
                     fig_gex.update_layout(
                         height=600, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
                         dragmode="pan",
@@ -322,7 +355,6 @@ else:
                     
                     add_chart_lines(fig_dex)
                     
-                    # dragmode="pan" y fixedrange=False para el eje Y
                     fig_dex.update_layout(
                         height=600, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
                         dragmode="pan",
