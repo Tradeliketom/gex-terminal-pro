@@ -13,21 +13,38 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS PERSONALIZADO ---
+# --- CSS PERSONALIZADO DE ALTA LEGIBILIDAD ---
 st.markdown("""
     <style>
-    .stApp { background-color: #0e1117; color: #ffffff; }
+    .stApp { background-color: #0e1117; color: #f0f6fc; }
+    
+    /* Contenedores y Métricas */
     div[data-testid="metric-container"] {
         background-color: #161b22; border: 1px solid #30363d; padding: 15px 20px; border-radius: 10px;
     }
-    h1, h2, h3, p, span, label { color: #ffffff !important; }
+    div[data-testid="metric-container"] label { color: #8b949e !important; }
+    div[data-testid="metric-container"] [data-testid="stMetricValue"] { color: #f0f6fc !important; }
+
+    /* Forzar alta visibilidad en textos, títulos, labels de filtros e inputs */
+    h1, h2, h3, h4, h5, h6 { color: #ffffff !important; font-weight: 700; }
+    p, span, label, .stMarkdown, div[data-baseweb="select"] span { color: #f0f6fc !important; }
+    
+    /* Inputs de números y textos de filtros */
+    .stTextInput input, .stNumberInput input, .stTextArea textarea {
+        background-color: #161b22 !important;
+        color: #f0f6fc !important;
+        border: 1px solid #30363d !important;
+    }
+    
+    /* Sidebar */
     [data-testid="stSidebar"] { background-color: #0d1117; border-right: 1px solid #30363d; }
+    [data-testid="stSidebar"] label, [data-testid="stSidebar"] span, [data-testid="stSidebar"] p {
+        color: #f0f6fc !important;
+    }
     
     [data-testid="stHeader"] { background-color: rgba(0,0,0,0); }
-    [data-testid="stToolbar"] { right: 2rem; }
-    svg[data-baseweb="icon"] { stroke: #ffffff !important; fill: #ffffff !important; }
-    button[kind="header"] { color: #ffffff !important; }
     
+    /* Botones principales */
     .stButton>button {
         width: 100%; background-color: #238636; color: white; border-radius: 6px; font-weight: 600; border: none; padding: 0.5rem 1rem;
     }
@@ -167,11 +184,9 @@ if app_mode == "🔥 Screener Small Caps & Momentum":
                 day_vol = hist['Volume'].iloc[-1]
                 change_pct = ((spot - prev_close) / prev_close) * 100
                 
-                # Obtener métricas fundamentales de Yahoo Finance (Float y Short Float)
                 info = tk.info
                 float_shares = info.get('floatShares', 0)
                 float_millions = (float_shares / 1e6) if float_shares else 0.0
-                
                 short_ratio_pct = (info.get('shortPercentOfFloat', 0.0) or 0.0) * 100
                 
                 # --- APLICAR FILTROS DE SCREENER ---
@@ -238,7 +253,7 @@ if app_mode == "🔥 Screener Small Caps & Momentum":
             
             if selected_ticker_chart:
                 tk_chart = yf.Ticker(selected_ticker_chart)
-                df_history = tk_chart.history(period="1mo") # Último mes de estructura
+                df_history = tk_chart.history(period="1mo")
                 
                 if not df_history.empty:
                     fig_struct = go.Figure()
