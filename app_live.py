@@ -252,7 +252,6 @@ if st.session_state.get('loaded', False) and selected_expirations:
             c4.metric("Put Wall", f"{put_wall:,.2f}", delta="Soporte")
             c5.metric("IV Skew", f"{iv_skew:+.2f}%")
             
-            # --- NUEVO: DESGLOSE DE EQUIVALENCIAS Y MULTIPLICADOR ---
             with st.expander("⚙️ Ver detalles de Conversión y Multiplicador Activo", expanded=False):
                 col_m1, col_m2, col_m3, col_m4 = st.columns(4)
                 col_m1.metric("Spot ETF Subyacente", f"{spot_etf:,.2f}")
@@ -264,45 +263,68 @@ if st.session_state.get('loaded', False) and selected_expirations:
             
             col_target = 'gex' if "Gamma" in metric_view else 'dex'
             
-            # --- MOTOR DE GRÁFICO (DRAGMODE='PAN' CORREGIDO EN LAYOUT) ---
+            # --- MOTOR GRÁFICO PROFESIONAL E INTUITIVO (PLOTLY) ---
             fig = go.Figure()
             
+            # Añadir barras con esquema de color dinámico y bordes limpios
             fig.add_trace(go.Bar(
                 x=df_filtered[col_target],
                 y=df_filtered['strike'],
                 orientation='h',
                 name=metric_view,
                 marker=dict(
-                    color=np.where(df_filtered[col_target] >= 0, '#00b4d8', '#ef476f'),
-                    line=dict(color='rgba(255,255,255,0.1)', width=0.5)
-                )
+                    color=np.where(df_filtered[col_target] >= 0, '#00b4d8', '#ff4d6d'),
+                    line=dict(color='rgba(255,255,255,0.15)', width=1)
+                ),
+                hovertemplate='Strike: %{y:,.2f}<br>Exposición: $%{x:,.0f}<extra></extra>'
             ))
             
-            fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f" Spot: {spot_fut:.2f} ", annotation_position="top right", annotation_font_color="white")
-            fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#a855f7", annotation_text=f" Flip: {gamma_flip:.2f} ", annotation_position="bottom right", annotation_font_color="#a855f7")
-            fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", annotation_text=f" Call Wall: {call_wall:.2f} ", annotation_position="top left", annotation_font_color="#22c55e")
-            fig.add_hline(y=put_wall, line_dash="solid", line_color="#ff9f1c", annotation_text=f" Put Wall: {put_wall:.2f} ", annotation_position="bottom left", annotation_font_color="#ff9f1c")
+            # Líneas de referencia principales con diseño HUD limpio
+            fig.add_hline(
+                y=spot_fut, line_dash="dash", line_color="#ffd166", line_width=2,
+                annotation_text=f" ⚡ SPOT: {spot_fut:,.2f} ", annotation_position="top right", 
+                annotation_font_color="#ffd166", annotation_font_size=11, annotation_bgcolor="#161b22"
+            )
+            fig.add_hline(
+                y=gamma_flip, line_dash="dot", line_color="#c084fc", line_width=1.5,
+                annotation_text=f" 🟣 FLIP: {gamma_flip:,.2f} ", annotation_position="bottom right", 
+                annotation_font_color="#c084fc", annotation_font_size=11, annotation_bgcolor="#161b22"
+            )
+            fig.add_hline(
+                y=call_wall, line_dash="solid", line_color="#22c55e", line_width=2,
+                annotation_text=f" 🟢 CALL WALL: {call_wall:,.2f} ", annotation_position="top left", 
+                annotation_font_color="#22c55e", annotation_font_size=11, annotation_bgcolor="#161b22"
+            )
+            fig.add_hline(
+                y=put_wall, line_dash="solid", line_color="#ff9f1c", line_width=2,
+                annotation_text=f" 🟠 PUT WALL: {put_wall:,.2f} ", annotation_position="bottom left", 
+                annotation_font_color="#ff9f1c", annotation_font_size=11, annotation_bgcolor="#161b22"
+            )
             
             fig.update_layout(
-                title=f"Perfil de {metric_view} (Modo Pan Activo ±{int(range_pct*100)}%)",
-                xaxis_title='Exposición Neta ($)',
-                yaxis_title='Niveles de Strike',
-                height=700, 
+                title=dict(
+                    text=f"<b>Perfil Dinámico de {metric_view}</b> &nbsp;|&nbsp; <span style='font-size:12px; color:#8b949e;'>±{int(range_pct*100)}% Rango</span>",
+                    font=dict(size=16, color="#ffffff")
+                ),
+                xaxis_title='<b>Exposición Neta Acumulada ($)</b>',
+                yaxis_title='<b>Niveles de Strike</b>',
+                height=720, 
                 template="plotly_dark", 
-                plot_bgcolor='rgba(0,0,0,0)', 
-                paper_bgcolor='rgba(0,0,0,0)',
-                font=dict(color="#ffffff", size=12), 
-                title_font=dict(size=16, color="#ffffff"),
+                plot_bgcolor='#0b0e14', 
+                paper_bgcolor='#0e1117',
+                font=dict(color="#ffffff", family="Arial, sans-serif", size=12),
                 dragmode='pan',
-                xaxis=dict(showgrid=True, gridcolor='#30363d', zeroline=True, zerolinecolor='#ffffff'), 
+                xaxis=dict(
+                    showgrid=True, gridcolor='#21262d', zeroline=True, zerolinecolor='#484f58',
+                    tickformat="$,.0f"
+                ), 
                 yaxis=dict(
-                    showgrid=True, 
-                    gridcolor='#30363d', 
-                    autorange="reversed",
-                    tickformat=".2f"
+                    showgrid=True, gridcolor='#21262d', autorange="reversed",
+                    tickformat=",.2f"
                 ),
                 showlegend=False,
-                margin=dict(l=20, r=20, t=50, b=20)
+                margin=dict(l=30, r=30, t=60, b=30),
+                hoverlabel=dict(bgcolor="#161b22", font_size=13, font_family="Arial")
             )
             
             st.plotly_chart(
@@ -311,7 +333,7 @@ if st.session_state.get('loaded', False) and selected_expirations:
                 config={
                     'scrollZoom': True, 
                     'displayModeBar': True, 
-                    'modeBarButtonsToRemove': ['lasso2d', 'select2d']
+                    'modeBarButtonsToRemove': ['lasso2d', 'select2d', 'autoScale2d']
                 }
             )
             
