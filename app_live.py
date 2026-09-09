@@ -151,25 +151,11 @@ with st.sidebar:
 if app_mode == "📚 Conceptos / Guía Táctica":
     st.title("📚 Guía Táctica Institucional y Conceptos Clave")
     st.markdown("Manual completo de aprendizaje sobre flujos de opciones, estructuras de mercado y creadores de mercado.")
-    
-    tab_m1, tab_m2, tab_m3 = st.tabs(["🎯 Muros y Zero Gamma Level", "📐 Multiplicadores y Futuros", "📖 Glosario: Call, Put & Skew"])
-    
-    with tab_m1:
-        st.markdown("""
-            ### 🟣 Zero Gamma Level (Gamma Flip)
-            * **Zero Gamma Level:** Nivel donde el gamma neto cambia de signo. Por encima domina la estabilidad; por debajo domina la aceleración y el pánico.
-        """)
-    with tab_m2:
-        st.markdown("### ⚙️ Equivalencias de Multiplicadores")
-    with tab_m3:
-        st.markdown("### 📖 Glosario Técnico")
-
 elif app_mode == "🔥 Screener Small Caps & Momentum":
     st.title("🔥 Screener de Small Caps, Float & Short Squeeze")
     st.info("Configura los parámetros en la barra lateral.")
-
 else:
-    # --- VISTA TERMINAL GEX / DEX ORIGINAL CON SESGO SUPERIOR ---
+    # --- VISTA TERMINAL GEX / DEX COMPLETA ---
     st.title("⚡ GEX & DEX Institutional Terminal — Live Stream (10s)")
     st.markdown("Análisis estructural de flujos de opciones con actualización automática cada 10 segundos.")
 
@@ -207,7 +193,7 @@ else:
         live_mode = st.toggle("Activar Auto-Refresh (10s en Vivo)", value=True)
         
         min_open_interest = st.number_input("Open Interest Mínimo", value=100, step=50)
-        range_pct = st.slider("Rango de Strikes (±%)", 0.5, 15.0, 4.0, step=0.5) / 100.0
+        range_pct = st.slider("Rango de Strikes (±%)", 1.0, 30.0, 10.0, step=1.0) / 100.0
         
         selected_expirations = []
         if expirations is not None and len(expirations) > 0:
@@ -239,24 +225,23 @@ else:
             if df_metrics.empty:
                 st.warning("No hay datos suficientes para los filtros seleccionados.")
             else:
-                min_strike = spot_fut * (1 - range_pct)
-                max_strike = spot_fut * (1 + range_pct)
+                # Aseguramos que el rango cubra al menos los muros clave para que no desaparezcan nunca del gráfico
+                min_strike = min(spot_fut * (1 - range_pct), put_wall * 0.99)
+                max_strike = max(spot_fut * (1 + range_pct), call_wall * 1.01)
+                
                 df_filtered = df_metrics[(df_metrics['strike'] >= min_strike) & (df_metrics['strike'] <= max_strike)].copy()
                 if df_filtered.empty: df_filtered = df_metrics
 
-                # --- EVALUACIÓN DEL SESGO DE MERCADO SEGÚN LA ZONA DEL SPOT ---
+                # --- EVALUACIÓN DEL SESGO DE MERCADO (SEMÁFORO) ---
                 if spot_fut > gamma_flip:
                     bias_text = "🟢 ALCISTA / ESTABLE (Por encima de Zero Gamma)"
                     bias_desc = "Los Market Makers actúan absorbiendo volatilidad y frenando los movimientos bajistas bruscos."
-                    bias_color = "rgba(34, 197, 94, 0.15)"
                 elif spot_fut < gamma_flip:
                     bias_text = "🔴 BAJISTA / ACELERACIÓN (Por debajo de Zero Gamma)"
                     bias_desc = "Zona propensa a alta volatilidad y aceleración de movimientos direccionales por cobertura corta."
-                    bias_color = "rgba(239, 71, 111, 0.15)"
                 else:
                     bias_text = "🟡 NEUTRAL / PUNTO DE INFLEXIÓN"
                     bias_desc = "El precio se encuentra exactamente sobre el nivel de cambio de signo de gamma."
-                    bias_color = "rgba(255, 209, 102, 0.15)"
 
                 # Panel de métricas superiores
                 c1, c2, c3, c4, c5, c6 = st.columns(6)
@@ -267,7 +252,7 @@ else:
                 c5.metric("Net GEX", f"${total_gex:,.0f}")
                 c6.metric("IV Skew", f"{iv_skew:+.2f}%")
                 
-                # --- CAJA SUPERIOR DE SESGO DE MERCADO ---
+                # --- CAJA SUPERIOR DE SESGO ---
                 st.markdown(f"""
                     <div style="background-color: #161b22; border-left: 5px solid {'#22c55e' if 'ALCISTA' in bias_text else '#ef476f' if 'BAJISTA' in bias_text else '#ffd166'}; padding: 12px 18px; border-radius: 6px; margin-top: 10px; margin-bottom: 20px;">
                         <span style="font-size: 14px; color: #8b949e; font-weight: bold;">SESGO INSTITUCIONAL ACTUAL:</span>
@@ -276,7 +261,7 @@ else:
                     </div>
                 """, unsafe_allow_html=True)
 
-                # --- GRÁFICOS ORIGINALES GEX Y DEX ---
+                # --- GRÁFICOS GEX Y DEX CON LÍNEAS Y PRECIOS EXPLICITOS ---
                 col_gex, col_dex = st.columns(2)
                 
                 with col_gex:
@@ -288,11 +273,17 @@ else:
                         orientation='h',
                         marker=dict(color=np.where(df_filtered['gex'] >= 0, '#00b4d8', '#ff4d6d'))
                     ))
-                    fig_gex.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text="Spot")
-                    fig_gex.add_hline(y=gamma_flip, line_dash="dot", line_color="#c084fc", annotation_text="Flip")
+                    
+                    # Líneas y precios exactos en etiquetas
+                    fig_gex.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f"Spot: {spot_fut:,.2f}", annotation_position="top right")
+                    fig_gex.add_hline(y=gamma_flip, line_dash="dot", line_color="#c084fc", annotation_text=f"Zero Gamma: {gamma_flip:,.2f}", annotation_position="top right")
+                    fig_gex.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", annotation_text=f"Call Wall: {call_wall:,.2f}", annotation_position="bottom right")
+                    fig_gex.add_hline(y=put_wall, line_dash="solid", line_color="#ef476f", annotation_text=f"Put Wall: {put_wall:,.2f}", annotation_position="bottom right")
+                    
                     fig_gex.update_layout(
                         height=600, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
-                        yaxis=dict(autorange="reversed", tickformat=",.2f"), xaxis=dict(tickformat="$,.0f"),
+                        yaxis=dict(autorange="reversed", tickformat=",.2f", range=[max(df_filtered['strike']), min(df_filtered['strike'])]), 
+                        xaxis=dict(tickformat="$,.0f"),
                         margin=dict(l=10, r=10, t=30, b=10)
                     )
                     st.plotly_chart(fig_gex, use_container_width=True)
@@ -306,10 +297,11 @@ else:
                         orientation='h',
                         marker=dict(color=np.where(df_filtered['dex'] >= 0, '#22c55e', '#ef476f'))
                     ))
-                    fig_dex.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text="Spot")
+                    fig_dex.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f"Spot: {spot_fut:,.2f}", annotation_position="top right")
                     fig_dex.update_layout(
                         height=600, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
-                        yaxis=dict(autorange="reversed", tickformat=",.2f"), xaxis=dict(tickformat="$,.0f"),
+                        yaxis=dict(autorange="reversed", tickformat=",.2f"), 
+                        xaxis=dict(tickformat="$,.0f"),
                         margin=dict(l=10, r=10, t=30, b=10)
                     )
                     st.plotly_chart(fig_dex, use_container_width=True)
