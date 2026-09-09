@@ -125,12 +125,25 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
 st.title("⚡ GEX & DEX Institutional Terminal Pro")
 st.markdown("Terminal cuantitativa multi-expiración adaptada para **móvil, índices y small caps**.")
 
-with st.expander("📖 GUÍA RÁPIDA: Cómo operar la terminal y el Semáforo", expanded=False):
+# --- GUÍA TÁCTICA Y DE CONCEPTOS AMPLIADA ---
+with st.expander("📖 GUÍA TÁCTICA Y MANUAL DE CONCEPTOS INSTITUCIONALES", expanded=False):
     st.markdown("""
-    ### 🚦 Semáforo de Dirección Táctica
-    * **🟢 POSICIÓN ALCISTA (LONG):** Ideal para buscar compras si el precio está cerca del suelo (Put Wall) o el régimen es estable.
-    * **🔴 POSICIÓN BAJISTA (SHORT):** Precaución o cortos si el precio perfora soportes o hay alta presión vendedora en DEX.
-    * **🟡 RANGO / ESPERAR:** El precio está en tierra de nadie; operar los rebotes de los extremos sin casarse con ninguna dirección.
+    ### 🚦 1. Semáforo de Dirección Táctica
+    * **🟢 POSICIÓN ALCISTA (LONG):** Ideal para buscar compras si el precio está apoyado sobre el suelo institucional (**Put Wall**) o el régimen de mercado es estable.
+    * **🔴 POSICIÓN BAJISTA (SHORT):** Precaución o cortos si el precio perfora soportes o se acerca peligrosamente al techo con alta volatilidad.
+    * **🟡 RANGO / ESPERAR:** El precio está en tierra de nadie entre muros. No persigas el precio; opera solo si llega a los extremos.
+
+    ### 🧠 2. Sesgo Estructural y Régimen de Mercado
+    * **Gamma Positivo (Precio > Gamma Flip):** Entorno de mercado normal/rango. Los creadores de mercado (Market Makers) actúan comprando caídas y vendiendo subidas, amortiguando la volatilidad.
+    * **Gamma Negativo (Precio < Gamma Flip):** Entorno inestable de alta volatilidad. Los movimientos se aceleran porque los creadores de mercado se ven obligados a vender cuando el precio cae.
+    * **IV Skew (Sesgo de Volatilidad):** Mide la diferencia de volatilidad implícita entre Puts y Calls. Un skew muy positivo indica una demanda inusual de seguros bajistas (miedo en el mercado).
+
+    ### 🧱 3. Conceptos Clave: Call Wall, Put Wall y Muros
+    * **Call Wall (Techo Verde):** Strike con la mayor concentración de GEX positivo (Calls). Actúa como resistencia magnética importante.
+    * **Put Wall (Suelo Naranja):** Strike con la mayor concentración de protección. Funciona como soporte duro donde los institucionales suelen defender el precio.
+
+    ### ⚙️ 4. Multiplicadores y Conversión (Futuros vs ETFs)
+    * Permite escalar el strike de los ETFs subyacentes (como QQQ) al precio de sus futuros equivalentes (como MNQ) aplicando un factor de conversión y un desplazamiento de calibración (`calibration_offset`) para alinear el precio exacto con el mercado en vivo.
     """, unsafe_allow_html=True)
 
 with st.sidebar:
@@ -206,7 +219,6 @@ if st.session_state.get('loaded', False) and selected_expirations:
             dist_to_put = (spot_fut - put_wall) / spot_fut * 100
             dist_to_call = (call_wall - spot_fut) / spot_fut * 100
             
-            # Lógica simple del semáforo basada en proximidad a muros y régimen
             if spot_fut <= put_wall * 1.003 or (spot_fut >= gamma_flip and dist_to_put < 1.5):
                 semaforo_emoji = "🟢"
                 semaforo_texto = "POSICIÓN ALCISTA (BUSCAR COMPRAS / LONG)"
@@ -244,6 +256,7 @@ if st.session_state.get('loaded', False) and selected_expirations:
             
             col_target = 'gex' if "Gamma" in metric_view else 'dex'
             
+            # --- MOTOR DE GRÁFICO (DRAGMODE='PAN' CORREGIDO EN LAYOUT) ---
             fig = go.Figure()
             
             fig.add_trace(go.Bar(
@@ -257,6 +270,7 @@ if st.session_state.get('loaded', False) and selected_expirations:
                 )
             ))
             
+            # Líneas de referencia (Put Wall en naranja brillante #ff9f1c)
             fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f" Spot: {spot_fut:.2f} ", annotation_position="top right", annotation_font_color="white")
             fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#a855f7", annotation_text=f" Flip: {gamma_flip:.2f} ", annotation_position="bottom right", annotation_font_color="#a855f7")
             fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", annotation_text=f" Call Wall: {call_wall:.2f} ", annotation_position="top left", annotation_font_color="#22c55e")
@@ -272,7 +286,7 @@ if st.session_state.get('loaded', False) and selected_expirations:
                 paper_bgcolor='rgba(0,0,0,0)',
                 font=dict(color="#ffffff", size=12), 
                 title_font=dict(size=16, color="#ffffff"),
-                dragmode='pan',
+                dragmode='pan',  # <--- MODO PAN CORREGIDO
                 xaxis=dict(showgrid=True, gridcolor='#30363d', zeroline=True, zerolinecolor='#ffffff'), 
                 yaxis=dict(
                     showgrid=True, 
