@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS PERSONALIZADO (Incluye arreglo para las 3 barras del menú en móvil) ---
+# --- CSS PERSONALIZADO (Arreglo menú móvil y contraste) ---
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
@@ -124,16 +124,16 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
     return df_grouped, call_wall, put_wall, gamma_flip, df['gex'].sum(), target_future_price, iv_skew
 
 st.title("⚡ GEX & DEX Institutional Terminal Pro")
-st.markdown("Terminal cuantitativa multi-expiración adaptada para **móvil y escritorio**.")
+st.markdown("Terminal cuantitativa multi-expiración adaptada para **móvil, índices y small caps**.")
 
 # --- GUÍA RÁPIDA INTEGRADA ---
 with st.expander("📖 GUÍA RÁPIDA: Cómo operar la terminal y configurar parámetros", expanded=False):
     st.markdown("""
     ### 🛠️ Pasos de Configuración Inicial
-    1. **Configurar el Ticker:** Ingresa el ETF que posee cadena de opciones líquida (ej. `QQQ` para Nasdaq, `SPY` para S&P 500) y el ticker de tu futuro o activo principal (`MNQ=F`, `MES=F`).
-    2. **Establecer el Multiplicador:** Usa **`40.0`** para MNQ, **`10.0`** para MES, o **`1.0`** si operas acciones directas sin apalancamiento de futuros.
+    1. **Seleccionar el Modo:** Elige en la barra lateral si operas **Futuros / Índices** (con multiplicador) o **Acciones / Small Caps** (multiplicador 1:1).
+    2. **Configurar el Ticker:** Ingresa el ETF o acción con opciones líquidas (ej. `QQQ`, `IWM` para small caps, o `AAPL`).
     3. **Seleccionar Vencimientos:** Marca los **3 o 4 vencimientos más cercanos** para capturar con precisión el flujo institucional de corto plazo (*Open Interest*).
-    4. **Ajustar el Zoom para Móvil:** Usa el deslizador de rango en la barra lateral (un valor de **±3%** es ideal para evitar amontonamientos en pantallas pequeñas).
+    4. **Ajustar el Zoom para Móvil:** Usa el deslizador de rango en la barra lateral (un valor de **±3%** es ideal para evitar amontonamientos).
 
     ### 🎯 Claves de Interpretación
     * **Put Wall (Soporte Principal 🟢):** Zona masiva de cobertura bajista. Alta probabilidad de rebote institucional.
@@ -143,18 +143,28 @@ with st.expander("📖 GUÍA RÁPIDA: Cómo operar la terminal y configurar par�
 # ------------------------------
 
 with st.sidebar:
-    st.header("🔍 Buscador de Tickers Libre")
-    etf_ticker = st.text_input("Ticker de Opciones (Ej: QQQ, SPY)", value="QQQ").upper()
-    fut_ticker = st.text_input("Ticker de Precio Spot/Futuro", value="MNQ=F").upper()
-    multiplier_base = st.number_input("Multiplicador de Conversión", value=40.0, step=0.1)
+    st.header("⚙️ Configuración del Activo")
     
+    # NUEVO: Selector de Modo (Futuros vs Acciones/Small Caps)
+    modo_operativa = st.selectbox("Modo de Operativa", ["📈 Futuros / Índices", "📉 Acciones / Small Caps (Directas)"])
+    
+    if "Futuros" in modo_operativa:
+        etf_ticker = st.text_input("Ticker de Opciones (Ej: QQQ, SPY)", value="QQQ").upper()
+        fut_ticker = st.text_input("Ticker del Futuro / Activo", value="MNQ=F").upper()
+        multiplier_base = st.number_input("Multiplicador de Conversión", value=40.0, step=0.1)
+    else:
+        etf_ticker = st.text_input("Ticker de la Small Cap / Acciones", value="IWM").upper()
+        fut_ticker = etf_ticker  # Se auto-iguala al mismo ticker
+        multiplier_base = 1.0    # Se fija automáticamente a 1.0 para lectura directa
+        st.info("💡 **Modo Small Cap Activo:** Multiplicador ajustado a 1.0 de forma automática.")
+
     try:
         _, _, spot_fut_live, expirations = fetch_market_data(etf_ticker, fut_ticker)
     except:
         spot_fut_live = 100.0
         expirations = []
 
-    target_future_price = st.number_input("Precio Live del Activo / Futuro", value=float(spot_fut_live), step=1.0, format="%.2f")
+    target_future_price = st.number_input("Precio Live del Activo", value=float(spot_fut_live), step=0.05, format="%.2f")
     
     interest_rate = st.slider("Tasa Libre de Riesgo (%)", 0.0, 10.0, 5.0) / 100.0
     metric_view = st.selectbox("Métrica Principal", ["Gamma Exposure (GEX)", "Delta Exposure (DEX)"])
