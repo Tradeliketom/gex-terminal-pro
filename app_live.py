@@ -137,10 +137,59 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
 # --- BARRA LATERAL ---
 with st.sidebar:
     st.header("⚡ Navegación Pro")
-    app_mode = st.radio("Seleccionar Vista", ["📈 Terminal GEX / DEX Individual", "🔥 Screener Small Caps & Momentum"])
+    app_mode = st.radio(
+        "Seleccionar Vista", 
+        [
+            "📈 Terminal GEX / DEX Individual", 
+            "🔥 Screener Small Caps & Momentum", 
+            "📚 Conceptos / Guía Táctica"
+        ]
+    )
     st.markdown("---")
 
-if app_mode == "🔥 Screener Small Caps & Momentum":
+if app_mode == "📚 Conceptos / Guía Táctica":
+    st.title("📚 Guía Táctica Institucional y Conceptos Clave")
+    st.markdown("Manual completo de aprendizaje sobre flujos de opciones, estructuras de mercado, cálculo de multiplicadores y perfil de creadores de mercado.")
+    
+    tab_m1, tab_m2, tab_m3 = st.tabs(["🎯 Muros y Dinámica de GEX", "📐 Multiplicadores y Futuros", "📖 Glosario: Call, Put & Skew"])
+    
+    with tab_m1:
+        st.markdown("""
+            ### 🧱 Put Wall y Call Wall (Los Muros Institucionales)
+            * **Put Wall (🟠 Suelo Institucional):** Es el nivel de Strike que acumula la mayor concentración neta de contratos Put abiertos. Representa un soporte crítico del mercado. ¿Por qué? Porque los creadores de mercado (Market Makers) venden masivamente opciones Put a los inversores y, para cubrir su riesgo direccional (Delta/Gamma), compran acciones o futuros subyacentes masivamente a medida que el precio se acerca a este nivel, frenando la caída.
+            * **Call Wall (🟢 Techo Institucional):** Strike con la mayor concentración de contratos Call. Actúa como una resistencia o imán superior. Los creadores de mercado se ven obligados a vender subyacentes o desentenderse de coberturas al alcanzar este nivel, creando un techo rígido.
+            * **Gamma Flip (🟣):** La línea divisoria donde la exposición neta de gamma pasa de positiva a negativa.
+              * **Gamma Positivo (+):** Estabilidad. Los Market Makers actúan como amortiguadores (compran caídas, venden subidas).
+              * **Gamma Negativo (-):** Aceleración. Los Market Makers amplifican los movimientos (venden en caídas, compran en pánicos).
+        """)
+        
+    with tab_m2:
+        st.markdown("""
+            ### ⚙️ Equivalencias de Multiplicadores (ETF vs Futuros)
+            Cuando operamos futuros apalancados sobre índices (como el Nasdaq `MNQ=F` o el S&P `MES=F`), las opciones líquidas de referencia se negocian en un ETF subyacente (`QQQ` o `SPY`). 
+            
+            Como cotizan en escalas numéricas completamente distintas, utilizamos un **Multiplicador de Conversión** y un **Offset de Calibración**:
+        """)
+        
+        st.markdown("""
+| Activo / Futuro | ETF de Referencia | Multiplicador Base Típico | Notas de Calibración |
+| :--- | :--- | :--- | :--- |
+| **MNQ / NQ** (Nasdaq) | QQQ | ~40.0x | Relación matemática aproximada entre el precio de QQQ y el Nasdaq 100. |
+| **MES / ES** (S&P 500) | SPY | ~10.0x | Relación proporcional entre el SPY y el contrato del S&P 500. |
+| **Acciones / Small Caps** | Misma acción (ej. GME, TSLA) | 1.0x | Sin conversión necesaria; el precio del activo coincide directamente con el subyacente. |
+        """)
+        
+    with tab_m3:
+        st.markdown("""
+            ### 📖 Glosario Técnico de Derivados
+            * **Call (Opción de Compra):** Contrato que otorga el derecho a comprar un activo a un precio fijado (Strike) en una fecha de expiración concreta.
+            * **Put (Opción de Venta):** Contrato que otorga el derecho a vender un activo a un precio fijado. Vital para coberturas de cartera.
+            * **IV Skew (Sesgo de Volatilidad Implícita):** Mide la diferencia de precio (volatilidad) que pagan las Puts frente a las Calls. Un **IV Skew positivo elevado** indica que los inversores están pagando primas muy altas por protegerse ante caídas (miedo institucional).
+            * **Gamma Exposure (GEX):** Volumen de acciones o futuros que los creadores de mercado deben comprar/vender obligatoriamente ante un movimiento de 1% en el subyacente.
+            * **Delta Exposure (DEX):** Exposición direccional neta de los contratos abiertos en función de la delta de cada opción.
+        """)
+
+elif app_mode == "🔥 Screener Small Caps & Momentum":
     st.title("🔥 Screener de Small Caps, Float & Short Squeeze")
     st.markdown("Filtra acciones en base a precio, volumen, cambio porcentual, **Float (acciones libres)** y **Short Float (%)**.")
     
@@ -434,38 +483,5 @@ else:
                 
                 st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True, 'modeBarButtonsToRemove': ['lasso2d', 'select2d', 'autoScale2d']})
                 
-                # --- GUÍA TÁCTICA, CONCEPTOS Y APRENDIZAJE ---
-                st.markdown("---")
-                st.subheader("📚 Guía Táctica Institucional y Conceptos Clave")
-                
-                tab_g1, tab_g2, tab_g3 = st.tabs(["🎯 Análisis del Sesgo y Niveles", "📐 Multiplicadores y Calibración", "📖 Conceptos: Call, Put & GEX"])
-                
-                with tab_g1:
-                    st.markdown(f"""
-                        ### 🔍 Interpretación Táctica Actual ({fut_ticker})
-                        * **Dirección Sugerida:** El sistema evalúa si el precio está anclado en soportes (Put Wall) o resistencias (Call Wall). Si el color del banner superior es verde, favorece rebotes o continuación alcista; si es rojo, advierte zonas de frenado o riesgo bajista.
-                        * **Gamma Flip (🟣):** Es la línea divisoria del comportamiento de los creadores de mercado (Market Makers). 
-                          * *Por encima del Flip:* Régimen de **Gamma Positivo (+)**. Los creadores de mercado compran cuando baja y venden cuando sube, lo que **suaviza y estabiliza** la volatilidad.
-                          * *Por debajo del Flip:* Régimen de **Gamma Negativo (-)**. Los creadores de mercado se ven obligados a perseguir el precio vendiendo en caídas o comprando en pánicos, lo que **acelera y amplifica** los movimientos bruscos.
-                        * **Call Wall (🟢) y Put Wall (🟠):** Representan los strikes con mayor concentración de contratos abiertos (Open Interest). Actúan como imanes de precios, techos duros o suelos institucionales muy difíciles de romper en un primer test.
-                    """)
-                    
-                with tab_g2:
-                    st.markdown("""
-                        ### ⚙️ Explicación del Multiplicador y Equivalencias
-                        * **¿Por qué se usa un Multiplicador?** Cuando operas derivados de índices (como futuros de Nasdaq `MNQ=F` o S&P `MES=F`), las opciones líquidas se negocian en un ETF subyacente (como `QQQ` o `SPY`). El precio del ETF y el del futuro tienen escalas numéricas totalmente distintas (ej. QQQ cotiza sobre ~480 y el MNQ sobre ~18,500).
-                        * **Multiplicador de Conversión:** Es el factor de escala base con el que ajustamos los strikes del ETF para alinearlos exactamente con la cotización del futuro.
-                        * **Calibración Automática por Offset:** La terminal calcula una línea base (`Precio ETF x Multiplicador`) y le aplica de forma dinámica una constante correctora (`Offset`) para que el gráfico de opciones coincida milimétricamente con el precio real al contado o de contrato del activo que estás operando en pantalla.
-                    """)
-                    
-                with tab_g3:
-                    st.markdown("""
-                        ### 📖 Diccionario de Aprendizaje: Opciones y Griegas
-                        * **Call (Opción de Compra):** Contrato que otorga el derecho a comprar un activo a un precio fijado (Strike) en una fecha determinada. Acumular Calls masivas genera resistencia en el precio (**Call Wall**).
-                        * **Put (Opción de Venta):** Contrato que otorga el derecho a vender un activo a un precio pactado. Una alta concentración de Puts crea una red de seguridad institucional (**Put Wall**).
-                        * **Gamma Exposure (GEX):** Mide cuántas acciones o contratos futuros deben comprar o vender los creadores de mercado para mantenerse neutrales ante variaciones del precio subyacente.
-                        * **Delta Exposure (DEX):** Cuantifica la exposición direccional neta de los contratos abiertos en función de la delta de las opciones.
-                        * **IV Skew (Sesgo de Volatilidad Implícita):** Diferencia porcentual de volatilidad entre las Puts y las Calls. Un sesgo positivo elevado indica que el mercado está pagando mucha prima por protección bajista (miedo al suelo).
-                    """)
     else:
         st.info("👈 Selecciona un activo preconfigurado o ajusta los parámetros en la barra lateral y pulsa **Actualizar Terminal**.")
