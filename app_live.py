@@ -154,8 +154,8 @@ if app_mode == "🔥 Screener Small Caps & Momentum":
             min_change_pct = st.number_input("Variación Mínima Día (%)", value=0.0, step=0.5)
             min_open_interest_scr = st.number_input("Open Interest Opciones Mín.", value=10, step=10)
         with col_f3:
-            max_float_shares = st.number_input("Float Máximo (Millones)", value=500.0, step=50.0, help="Filtra empresas con bajo número de acciones flotantes")
-            min_short_float = st.number_input("Short Float Mínimo (%)", value=0.0, step=1.0, help="Pon 0.0 para no descartar tickers sin datos de cortos")
+            max_float_shares = st.number_input("Float Máximo (Millones)", value=500.0, step=50.0)
+            min_short_float = st.number_input("Short Float Mínimo (%)", value=0.0, step=1.0)
             
     st.markdown("### 📋 Universo Inicial de Small Caps / Watchlist")
     default_small_caps = ["GME", "AMC", "IWM", "RIOT", "MARA", "PLTR", "SOFI", "NIO", "COIN", "HOOD", "BITF", "HUT", "HLGN", "SENS", "SPY", "QQQ", "TSLA", "NVDA"]
@@ -184,7 +184,6 @@ if app_mode == "🔥 Screener Small Caps & Momentum":
                 float_millions = (float_shares / 1e6) if float_shares else 0.0
                 short_ratio_pct = (info.get('shortPercentOfFloat', 0.0) or 0.0) * 100
                 
-                # --- APLICAR FILTROS FLEXIBLES ---
                 if not (min_price <= spot <= max_price): continue
                 if day_vol < min_vol: continue
                 if change_pct < min_change_pct: continue
@@ -242,11 +241,29 @@ if app_mode == "🔥 Screener Small Caps & Momentum":
             st.markdown("---")
             st.subheader("🕯️ Gráfico Profesional de Velas Japonesas")
             tickers_found = df_screener["Ticker"].tolist()
-            selected_ticker_chart = st.selectbox("Selecciona un Ticker de la lista para ver sus Velas Japonesas:", tickers_found)
+            
+            col_t1, col_t2 = st.columns([2, 2])
+            with col_t1:
+                selected_ticker_chart = st.selectbox("Selecciona un Ticker de la lista:", tickers_found)
+            with col_t2:
+                interval_map = {
+                    "1 Minuto (1m)": "1m",
+                    "5 Minutos (5m)": "5m",
+                    "15 Minutos (15m)": "15m",
+                    "1 Hora (1h)": "1h",
+                    "1 Día (1d)": "1d",
+                    "1 Semana (1wk)": "1wk",
+                    "1 Mes (1mo)": "1mo"
+                }
+                selected_interval_label = st.selectbox("Selecciona la Temporalidad:", list(interval_map.keys()), index=4)
+                selected_interval = interval_map[selected_interval_label]
+            
+            period_map = {"1m": "7d", "5m": "60d", "15m": "60d", "1h": "730d", "1d": "max", "1wk": "max", "1mo": "max"}
+            fetch_period = period_map.get(selected_interval, "1y")
             
             if selected_ticker_chart:
                 tk_chart = yf.Ticker(selected_ticker_chart)
-                df_history = tk_chart.history(period="3mo") # Últimos 3 meses con detalle de velas
+                df_history = tk_chart.history(period=fetch_period, interval=selected_interval)
                 
                 if not df_history.empty:
                     fig_candle = go.Figure(data=[go.Candlestick(
@@ -261,8 +278,8 @@ if app_mode == "🔥 Screener Small Caps & Momentum":
                     )])
                     
                     fig_candle.update_layout(
-                        title=dict(text=f"<b>Gráfico de Velas — {selected_ticker_chart}</b>", font=dict(size=16, color="#ffffff")),
-                        xaxis_title="Fecha",
+                        title=dict(text=f"<b>Gráfico de Velas ({selected_interval_label}) — {selected_ticker_chart}</b>", font=dict(size=16, color="#ffffff")),
+                        xaxis_title="Fecha / Hora",
                         yaxis_title="Precio ($)",
                         height=500, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
                         xaxis=dict(showgrid=True, gridcolor='#21262d', rangeslider=dict(visible=False)),
@@ -271,7 +288,7 @@ if app_mode == "🔥 Screener Small Caps & Momentum":
                     )
                     st.plotly_chart(fig_candle, use_container_width=True)
         else:
-            st.warning("Ningún ticker cumple con los filtros. Prueba a ampliar el precio máximo o relajar el volumen mínimo.")
+            st.warning("Ningún ticker cumple con los filtros. Prueba a ampliar el precio máximo o relajar el volumen.")
     else:
         st.info("👈 Configura los filtros y presiona **Escanear Mercado y Estructuras**.")
 
@@ -298,7 +315,7 @@ else:
         if "Futuros" in modo_operativa:
             etf_ticker = st.text_input("Ticker de Opciones", value=default_ticker).upper()
             fut_ticker = st.text_input("Ticker del Futuro / Activo", value="MNQ=F").upper()
-            multiplier_base = st.number_input("Multiplicador de Conversión", value=40.0, step=0.1)
+            multiplier_base = st.number_input("Multiplicador de Conversión", value=40.0, step=0.1, help="Equivalencia de puntos de opciones a puntos del contrato de futuros.")
         else:
             etf_ticker = st.text_input("Ticker de la Small Cap / Acción", value=default_ticker).upper()
             fut_ticker = etf_ticker  
@@ -416,5 +433,39 @@ else:
                 )
                 
                 st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True, 'modeBarButtonsToRemove': ['lasso2d', 'select2d', 'autoScale2d']})
+                
+                # --- GUÍA TÁCTICA, CONCEPTOS Y APRENDIZAJE ---
+                st.markdown("---")
+                st.subheader("📚 Guía Táctica Institucional y Conceptos Clave")
+                
+                tab_g1, tab_g2, tab_g3 = st.tabs(["🎯 Análisis del Sesgo y Niveles", "📐 Multiplicadores y Calibración", "📖 Conceptos: Call, Put & GEX"])
+                
+                with tab_g1:
+                    st.markdown(f"""
+                        ### 🔍 Interpretación Táctica Actual ({fut_ticker})
+                        * **Dirección Sugerida:** El sistema evalúa si el precio está anclado en soportes (Put Wall) o resistencias (Call Wall). Si el color del banner superior es verde, favorece rebotes o continuación alcista; si es rojo, advierte zonas de frenado o riesgo bajista.
+                        * **Gamma Flip (🟣):** Es la línea divisoria del comportamiento de los creadores de mercado (Market Makers). 
+                          * *Por encima del Flip:* Régimen de **Gamma Positivo (+)**. Los creadores de mercado compran cuando baja y venden cuando sube, lo que **suaviza y estabiliza** la volatilidad.
+                          * *Por debajo del Flip:* Régimen de **Gamma Negativo (-)**. Los creadores de mercado se ven obligados a perseguir el precio vendiendo en caídas o comprando en pánicos, lo que **acelera y amplifica** los movimientos bruscos.
+                        * **Call Wall (🟢) y Put Wall (🟠):** Representan los strikes con mayor concentración de contratos abiertos (Open Interest). Actúan como imanes de precios, techos duros o suelos institucionales muy difíciles de romper en un primer test.
+                    """)
+                    
+                with tab_g2:
+                    st.markdown("""
+                        ### ⚙️ Explicación del Multiplicador y Equivalencias
+                        * **¿Por qué se usa un Multiplicador?** Cuando operas derivados de índices (como futuros de Nasdaq `MNQ=F` o S&P `MES=F`), las opciones líquidas se negocian en un ETF subyacente (como `QQQ` o `SPY`). El precio del ETF y el del futuro tienen escalas numéricas totalmente distintas (ej. QQQ cotiza sobre ~480 y el MNQ sobre ~18,500).
+                        * **Multiplicador de Conversión:** Es el factor de escala base con el que ajustamos los strikes del ETF para alinearlos exactamente con la cotización del futuro.
+                        * **Calibración Automática por Offset:** La terminal calcula una línea base (`Precio ETF x Multiplicador`) y le aplica de forma dinámica una constante correctora (`Offset`) para que el gráfico de opciones coincida milimétricamente con el precio real al contado o de contrato del activo que estás operando en pantalla.
+                    """)
+                    
+                with tab_g3:
+                    st.markdown("""
+                        ### 📖 Diccionario de Aprendizaje: Opciones y Griegas
+                        * **Call (Opción de Compra):** Contrato que otorga el derecho a comprar un activo a un precio fijado (Strike) en una fecha determinada. Acumular Calls masivas genera resistencia en el precio (**Call Wall**).
+                        * **Put (Opción de Venta):** Contrato que otorga el derecho a vender un activo a un precio pactado. Una alta concentración de Puts crea una red de seguridad institucional (**Put Wall**).
+                        * **Gamma Exposure (GEX):** Mide cuántas acciones o contratos futuros deben comprar o vender los creadores de mercado para mantenerse neutrales ante variaciones del precio subyacente.
+                        * **Delta Exposure (DEX):** Cuantifica la exposición direccional neta de los contratos abiertos en función de la delta de las opciones.
+                        * **IV Skew (Sesgo de Volatilidad Implícita):** Diferencia porcentual de volatilidad entre las Puts y las Calls. Un sesgo positivo elevado indica que el mercado está pagando mucha prima por protección bajista (miedo al suelo).
+                    """)
     else:
         st.info("👈 Selecciona un activo preconfigurado o ajusta los parámetros en la barra lateral y pulsa **Actualizar Terminal**.")
