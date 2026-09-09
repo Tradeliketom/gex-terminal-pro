@@ -13,6 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# --- CSS PERSONALIZADO (Incluye arreglo para las 3 barras del menú en móvil) ---
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
@@ -21,6 +22,13 @@ st.markdown("""
     }
     h1, h2, h3, p, span, label { color: #ffffff !important; }
     [data-testid="stSidebar"] { background-color: #0d1117; border-right: 1px solid #30363d; }
+    
+    /* FORZAR VISIBILIDAD DE LAS 3 BARRAS DEL MENÚ MÓVIL Y HEADER */
+    [data-testid="stHeader"] { background-color: rgba(0,0,0,0); }
+    [data-testid="stToolbar"] { right: 2rem; }
+    svg[data-baseweb="icon"] { stroke: #ffffff !important; fill: #ffffff !important; }
+    button[kind="header"] { color: #ffffff !important; }
+    
     .stButton>button {
         width: 100%; background-color: #238636; color: white; border-radius: 6px; font-weight: 600; border: none; padding: 0.5rem 1rem;
     }
@@ -116,20 +124,28 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
     return df_grouped, call_wall, put_wall, gamma_flip, df['gex'].sum(), target_future_price, iv_skew
 
 st.title("⚡ GEX & DEX Institutional Terminal Pro")
-st.markdown("Terminal cuantitativa multi-expiración abierta para **cualquier Ticker o Futuro**.")
+st.markdown("Terminal cuantitativa multi-expiración adaptada para **móvil y escritorio**.")
 
-with st.expander("📖 GUÍA TÁCTICA: Muros Institucionales y Régimen de Gamma", expanded=False):
+# --- GUÍA RÁPIDA INTEGRADA ---
+with st.expander("📖 GUÍA RÁPIDA: Cómo operar la terminal y configurar parámetros", expanded=False):
     st.markdown("""
+    ### 🛠️ Pasos de Configuración Inicial
+    1. **Configurar el Ticker:** Ingresa el ETF que posee cadena de opciones líquida (ej. `QQQ` para Nasdaq, `SPY` para S&P 500) y el ticker de tu futuro o activo principal (`MNQ=F`, `MES=F`).
+    2. **Establecer el Multiplicador:** Usa **`40.0`** para MNQ, **`10.0`** para MES, o **`1.0`** si operas acciones directas sin apalancamiento de futuros.
+    3. **Seleccionar Vencimientos:** Marca los **3 o 4 vencimientos más cercanos** para capturar con precisión el flujo institucional de corto plazo (*Open Interest*).
+    4. **Ajustar el Zoom para Móvil:** Usa el deslizador de rango en la barra lateral (un valor de **±3%** es ideal para evitar amontonamientos en pantallas pequeñas).
+
+    ### 🎯 Claves de Interpretación
     * **Put Wall (Soporte Principal 🟢):** Zona masiva de cobertura bajista. Alta probabilidad de rebote institucional.
     * **Call Wall (Techo de Resistencia 🔴):** Resistencia magnética de corto plazo; ideal para tomas de beneficios.
     * **Gamma Flip (Pivote 🟣):** Frontera de régimen. Por encima = mercado en rango (estabilizador). Por debajo = mercado direccional y volátil.
-    * **IV Skew (Sesgo):** Si las Puts encarecen su volatilidad respecto a las Calls, alerta de cobertura bajista institucional.
     """, unsafe_allow_html=True)
+# ------------------------------
 
 with st.sidebar:
     st.header("🔍 Buscador de Tickers Libre")
-    etf_ticker = st.text_input("Ticker de Opciones (Ej: QQQ, SPY, AAPL)", value="QQQ").upper()
-    fut_ticker = st.text_input("Ticker de Precio Spot/Futuro (Ej: MNQ=F, MES=F)", value="MNQ=F").upper()
+    etf_ticker = st.text_input("Ticker de Opciones (Ej: QQQ, SPY)", value="QQQ").upper()
+    fut_ticker = st.text_input("Ticker de Precio Spot/Futuro", value="MNQ=F").upper()
     multiplier_base = st.number_input("Multiplicador de Conversión", value=40.0, step=0.1)
     
     try:
@@ -144,8 +160,8 @@ with st.sidebar:
     metric_view = st.selectbox("Métrica Principal", ["Gamma Exposure (GEX)", "Delta Exposure (DEX)"])
     
     st.markdown("---")
-    st.subheader("Filtro de Rango (Zoom)")
-    range_pct = st.slider("Rango de Strikes (±%)", 1.0, 15.0, 5.0) / 100.0
+    st.subheader("📱 Zoom Óptimo para Móvil")
+    range_pct = st.slider("Rango de Strikes (±%)", 0.5, 10.0, 3.0, step=0.5) / 100.0
     
     selected_expirations = []
     if expirations is not None and len(expirations) > 0:
@@ -153,13 +169,13 @@ with st.sidebar:
         default_selection = list(expirations[:min(3, len(expirations))])
         selected_expirations = st.multiselect("Vencimientos (Agregado)", expirations, default=default_selection)
         
-    calcular_btn = st.button("🚀 Actualizar Terminal Institucional")
+    calcular_btn = st.button("🚀 Actualizar Terminal")
 
 if calcular_btn:
     st.session_state['loaded'] = True
 
 if st.session_state.get('loaded', False) and selected_expirations:
-    with st.spinner(f"Procesando flujos institucionales para {etf_ticker} / {fut_ticker}..."):
+    with st.spinner(f"Procesando flujos para {etf_ticker}..."):
         tk_etf, spot_etf, _, _ = fetch_market_data(etf_ticker, fut_ticker)
         
         df_metrics, call_wall, put_wall, gamma_flip, total_gex, spot_fut, iv_skew = process_multi_expiry_metrics(
@@ -167,7 +183,7 @@ if st.session_state.get('loaded', False) and selected_expirations:
         )
         
         if df_metrics.empty:
-            st.warning("No hay suficiente información o el ticker no tiene cadena de opciones disponible.")
+            st.warning("No hay suficiente información disponible para este ticker.")
         else:
             min_strike = spot_fut * (1 - range_pct)
             max_strike = spot_fut * (1 + range_pct)
@@ -176,21 +192,21 @@ if st.session_state.get('loaded', False) and selected_expirations:
             if df_filtered.empty:
                 df_filtered = df_metrics
                 
-            regimen = "🟢 GAMMA POSITIVO (Rango / Rebotes Estabilizadores)" if spot_fut >= gamma_flip else "🔴 GAMMA NEGATIVO (Direccional / Alta Volatilidad)"
+            regimen = "🟢 GAMMA POSITIVO (Rango / Rebotes)" if spot_fut >= gamma_flip else "🔴 GAMMA NEGATIVO (Alta Volatilidad)"
             
-            st.markdown(f"### 📊 Dashboard Institucional [{fut_ticker}] &nbsp;&nbsp;|&nbsp;&nbsp; *Actualizado: {datetime.now().strftime('%H:%M:%S')}*")
+            st.markdown(f"### 📊 Dashboard [{fut_ticker}] &nbsp;&nbsp;|&nbsp;&nbsp; *{datetime.now().strftime('%H:%M:%S')}*")
             
             c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric("Precio Spot Activo", f"{spot_fut:,.2f}")
-            c2.metric("Gamma Flip (Pivot)", f"{gamma_flip:,.2f}")
-            c3.metric("Call Wall (Techo)", f"{call_wall:,.2f}", delta="Resistencia", delta_color="inverse")
-            c4.metric("Put Wall (Suelo)", f"{put_wall:,.2f}", delta="Soporte")
-            c5.metric("IV Skew (Puts-Calls)", f"{iv_skew:+.2f}%")
+            c1.metric("Spot", f"{spot_fut:,.2f}")
+            c2.metric("Gamma Flip", f"{gamma_flip:,.2f}")
+            c3.metric("Call Wall", f"{call_wall:,.2f}", delta="Resistencia", delta_color="inverse")
+            c4.metric("Put Wall", f"{put_wall:,.2f}", delta="Soporte")
+            c5.metric("IV Skew", f"{iv_skew:+.2f}%")
             
-            st.info(f"**Régimen de Mercado Actual:** {regimen}")
+            st.info(f"**Régimen:** {regimen}")
             
             st.markdown("---")
-            st.markdown("### 🎯 Plan de Acción Táctico & Recomendación Operativa")
+            st.markdown("### 🎯 Plan de Acción Táctico")
             
             dist_call_wall = (call_wall - spot_fut) / spot_fut * 100
             dist_put_wall = (spot_fut - put_wall) / spot_fut * 100
@@ -198,33 +214,29 @@ if st.session_state.get('loaded', False) and selected_expirations:
             col_t1, col_t2 = st.columns(2)
             
             with col_t1:
-                st.markdown("#### 🧭 Sesgo Estructural & Régimen")
+                st.markdown("#### 🧭 Sesgo Estructural")
                 if spot_fut >= gamma_flip:
-                    st.success("**Estrategia Recomendada (Rango):**\n* El precio está sobre el Gamma Flip. Los Market Makers actúan como estabilizadores.\n* **Acción:** Buscar compras en soportes o Put Wall y tomas de beneficios en resistencias.")
+                    st.success("**Estrategia (Rango):** Buscar compras en soportes/Put Wall y tomas de beneficios en resistencias.")
                 else:
-                    st.error("**Estrategia Recomendada (Direccional):**\n* El precio está bajo el Gamma Flip. Entorno inestable.\n* **Acción:** Evitar contratendencias largas. Seguir la tendencia de corto plazo.")
-                
+                    st.error("**Estrategia (Direccional):** Entorno inestable. Seguir la tendencia de corto plazo.")
                 if iv_skew > 0:
                     st.warning(f"**Alerta IV Skew (+{iv_skew:.1f}%):** Mayor demanda de cobertura bajista.")
-                else:
-                    st.info(f"**IV Skew Neutral ({iv_skew:.1f}%):** Sin tensiones extremas.")
-
+            
             with col_t2:
-                st.markdown("#### 📍 Proximidad a Muros & Disparadores")
+                st.markdown("#### 📍 Proximidad a Muros")
                 near_call = abs(spot_fut - call_wall) / spot_fut <= 0.004
                 near_put = abs(spot_fut - put_wall) / spot_fut <= 0.004
                 
                 if near_call:
-                    st.warning(f"⚠️ **¡ZONA DE ALERTA EN CALL WALL!**\n* Precio a **+{dist_call_wall:.2f}%** del techo ({call_wall:,.2f}).\n* **Acción:** Alta probabilidad de freno o rechazo bajista.")
+                    st.warning(f"⚠️ **¡Alerta Call Wall!** A **+{dist_call_wall:.2f}%** del techo ({call_wall:,.2f}).")
                 elif near_put:
-                    st.warning(f"⚠️ **¡ZONA DE ALERTA EN PUT WALL!**\n* Precio a **-{dist_put_wall:.2f}%** del suelo ({put_wall:,.2f}).\n* **Acción:** Zona clave de defensa institucional para rebotes.")
+                    st.warning(f"⚠️ **¡Alerta Put Wall!** A **-{dist_put_wall:.2f}%** del suelo ({put_wall:,.2f}).")
                 else:
-                    st.info(f"ℹ️ **Distancias Actuales a Límites:**\n* Distancia al Techo: **+{dist_call_wall:.2f}%**\n* Distancia al Suelo: **-{dist_put_wall:.2f}%**")
+                    st.info(f"ℹ️ Distancia Techo: **+{dist_call_wall:.2f}%** | Suelo: **-{dist_put_wall:.2f}%**")
 
             st.markdown("---")
             
             col_target = 'gex' if "Gamma" in metric_view else 'dex'
-            df_filtered['Color'] = np.where(df_filtered[col_target] >= 0, 'Positivo', 'Negativo')
             
             fig = go.Figure()
             fig.add_trace(go.Bar(
@@ -235,23 +247,24 @@ if st.session_state.get('loaded', False) and selected_expirations:
                 marker=dict(color=np.where(df_filtered[col_target] >= 0, '#00b4d8', '#ef476f'))
             ))
             
-            fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f"Spot Activo: {spot_fut:.2f}", annotation_position="top right", annotation_font_color="white")
-            fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#a855f7", annotation_text=f"Gamma Flip: {gamma_flip:.2f}", annotation_position="bottom right", annotation_font_color="#a855f7")
+            fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f"Spot: {spot_fut:.2f}", annotation_position="top right", annotation_font_color="white")
+            fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#a855f7", annotation_text=f"Flip: {gamma_flip:.2f}", annotation_position="bottom right", annotation_font_color="#a855f7")
             fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", annotation_text=f"Call Wall: {call_wall:.2f}", annotation_position="top left", annotation_font_color="#22c55e")
             fig.add_hline(y=put_wall, line_dash="solid", line_color="#ef4444", annotation_text=f"Put Wall: {put_wall:.2f}", annotation_position="bottom left", annotation_font_color="#ef4444")
             
             fig.update_layout(
-                title=f"Perfil de {metric_view} (Zoom ±{int(range_pct*100)}%) — {fut_ticker}",
-                xaxis_title=f'Exposición Neta (${metric_view})',
-                yaxis_title='Nivel de Strike Calibrado',
-                height=850, template="plotly_dark", plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                font=dict(color="#ffffff", size=12), title_font=dict(size=20, color="#ffffff"),
+                title=f"Perfil de {metric_view} (Zoom Móvil ±{int(range_pct*100)}%)",
+                xaxis_title=f'Exposición Neta',
+                yaxis_title='Strike',
+                height=650, template="plotly_dark", plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(color="#ffffff", size=11), title_font=dict(size=16, color="#ffffff"),
                 xaxis=dict(showgrid=True, gridcolor='#30363d'), yaxis=dict(showgrid=True, gridcolor='#30363d', autorange="reversed"),
-                showlegend=False
+                showlegend=False,
+                margin=dict(l=10, r=10, t=40, b=10)
             )
-            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False})
             
-            with st.expander("🔍 Ver desglose tabular completo por Strike"):
+            with st.expander("🔍 Ver desglose tabular completo"):
                 st.dataframe(df_filtered.style.format({'strike': '{:,.2f}', 'gex': '${:,.2f}', 'dex': '${:,.2f}'}), use_container_width=True)
 else:
-    st.info("👈 Introduce los tickers en la barra lateral, selecciona los vencimientos y haz clic en **Actualizar Terminal Institucional**.")
+    st.info("👈 Configura los parámetros en la barra lateral y pulsa **Actualizar Terminal**.")
