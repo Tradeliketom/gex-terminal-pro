@@ -253,26 +253,42 @@ else:
                 
                 # --- CAJA SUPERIOR DE SESGO ---
                 st.markdown(f"""
-                    <div style="background-color: #161b22; border-left: 5px solid {'#22c55e' if 'ALCISTA' in bias_text else '#ef476f' if 'BAJISTA' in bias_text else '#ffd166'}; padding: 12px 18px; border-radius: 6px; margin-top: 10px; margin-bottom: 10px;">
+                    <div style="background-color: #161b22; border-left: 5px solid {'#22c55e' if 'ALCISTA' in bias_text else '#ef476f' if 'BAJISTA' in bias_text else '#ffd166'}; padding: 12px 18px; border-radius: 6px; margin-top: 10px; margin-bottom: 20px;">
                         <span style="font-size: 14px; color: #8b949e; font-weight: bold;">SESGO INSTITUCIONAL ACTUAL:</span>
                         <div style="font-size: 18px; font-weight: bold; color: #ffffff; margin-top: 2px;">{bias_text}</div>
                         <div style="font-size: 12px; color: #c9d1d9; margin-top: 2px;">{bias_desc}</div>
                     </div>
                 """, unsafe_allow_html=True)
 
-                # --- NUEVO PANEL CLARO DE NIVELES CLAVE (100% LEGIBLE) ---
-                st.markdown(f"""
-                    <div style="display: flex; justify-content: space-between; background-color: #161b22; border: 1px solid #30363d; padding: 12px 20px; border-radius: 8px; margin-bottom: 20px;">
-                        <div><span style="color: #8b949e; font-size: 12px;">CALL WALL (IZDA):</span><br><b style="color: #22c55e; font-size: 16px;">{call_wall:,.2f}</b></div>
-                        <div><span style="color: #8b949e; font-size: 12px;">PUT WALL (IZDA):</span><br><b style="color: #ef476f; font-size: 16px;">{put_wall:,.2f}</b></div>
-                        <div><span style="color: #8b949e; font-size: 12px;">SPOT (DCHA):</span><br><b style="color: #ffd166; font-size: 16px;">{spot_fut:,.2f}</b></div>
-                        <div><span style="color: #8b949e; font-size: 12px;">ZERO GAMMA (DCHA):</span><br><b style="color: #c084fc; font-size: 16px;">{gamma_flip:,.2f}</b></div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-                # --- GRÁFICOS GEX Y DEX (LÍNEAS LIMPIAS SIN TEXTO ENCONTRADO) ---
+                # --- GRÁFICOS GEX Y DEX CON ETIQUETAS BLANCAS Y NIVELES EN AMBOS ---
                 col_gex, col_dex = st.columns(2)
                 
+                # Configuración común para las anotaciones con texto blanco y fondo oscuro legible
+                def add_chart_lines(fig):
+                    # Call Wall y Put Wall a la IZQUIERDA
+                    fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e",
+                                  annotation_text=f"Call Wall: {call_wall:,.2f}", 
+                                  annotation_position="top left",
+                                  annotation_font=dict(color="white", size=11),
+                                  annotation_bgcolor="#161b22")
+                    fig.add_hline(y=put_wall, line_dash="solid", line_color="#ef476f",
+                                  annotation_text=f"Put Wall: {put_wall:,.2f}", 
+                                  annotation_position="bottom left",
+                                  annotation_font=dict(color="white", size=11),
+                                  annotation_bgcolor="#161b22")
+                    
+                    # Spot y Zero Gamma a la DERECHA
+                    fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166",
+                                  annotation_text=f"Spot: {spot_fut:,.2f}", 
+                                  annotation_position="top right",
+                                  annotation_font=dict(color="white", size=11),
+                                  annotation_bgcolor="#161b22")
+                    fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#c084fc",
+                                  annotation_text=f"Zero Gamma: {gamma_flip:,.2f}", 
+                                  annotation_position="bottom right",
+                                  annotation_font=dict(color="white", size=11),
+                                  annotation_bgcolor="#161b22")
+
                 with col_gex:
                     st.subheader("📊 Gamma Exposure (GEX)")
                     fig_gex = go.Figure()
@@ -283,11 +299,7 @@ else:
                         marker=dict(color=np.where(df_filtered['gex'] >= 0, '#00b4d8', '#ff4d6d'))
                     ))
                     
-                    # Líneas limpias sin texto solapado (las referencias numéricas ya están arriba ordenadas)
-                    fig_gex.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166")
-                    fig_gex.add_hline(y=gamma_flip, line_dash="dot", line_color="#c084fc")
-                    fig_gex.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e")
-                    fig_gex.add_hline(y=put_wall, line_dash="solid", line_color="#ef476f")
+                    add_chart_lines(fig_gex)
                     
                     fig_gex.update_layout(
                         height=600, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
@@ -306,10 +318,12 @@ else:
                         orientation='h',
                         marker=dict(color=np.where(df_filtered['dex'] >= 0, '#22c55e', '#ef476f'))
                     ))
-                    fig_dex.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166")
+                    
+                    add_chart_lines(fig_dex)
+                    
                     fig_dex.update_layout(
                         height=600, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
-                        yaxis=dict(autorange="reversed", tickformat=",.2f"), 
+                        yaxis=dict(autorange="reversed", tickformat=",.2f", range=[max(df_filtered['strike']), min(df_filtered['strike'])]), 
                         xaxis=dict(tickformat="$,.0f"),
                         margin=dict(l=10, r=10, t=30, b=10)
                     )
