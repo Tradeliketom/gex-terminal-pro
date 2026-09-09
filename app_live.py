@@ -56,7 +56,7 @@ def fetch_market_data(etf_symbol, future_symbol):
     
     return tk_etf, spot_etf, spot_fut, tk_etf.options
 
-def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_future_price, multiplier_base, interest_rate=0.05):
+def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_future_price, multiplier_base, min_oi=0, interest_rate=0.05):
     all_results = []
     call_ivs = []
     put_ivs = []
@@ -73,7 +73,7 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
             
             for _, row in calls.iterrows():
                 K_etf, sigma, oi = row['strike'], row['impliedVolatility'], row['openInterest']
-                if pd.isna(sigma) or sigma == 0 or pd.isna(oi): continue
+                if pd.isna(sigma) or sigma == 0 or pd.isna(oi) or oi < min_oi: continue
                 
                 if abs(K_etf - spot_etf) / spot_etf < 0.05:
                     call_ivs.append(sigma)
@@ -89,7 +89,7 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
                 
             for _, row in puts.iterrows():
                 K_etf, sigma, oi = row['strike'], row['impliedVolatility'], row['openInterest']
-                if pd.isna(sigma) or sigma == 0 or pd.isna(oi): continue
+                if pd.isna(sigma) or sigma == 0 or pd.isna(oi) or oi < min_oi: continue
                 
                 if abs(K_etf - spot_etf) / spot_etf < 0.05:
                     put_ivs.append(sigma)
@@ -129,34 +129,38 @@ st.markdown("Terminal cuantitativa multi-expiración adaptada para **móvil, ín
 # --- GUÍA RÁPIDA INTEGRADA ---
 with st.expander("📖 GUÍA RÁPIDA: Cómo operar la terminal y configurar parámetros", expanded=False):
     st.markdown("""
-    ### 🛠️ Pasos de Configuración Inicial
-    1. **Seleccionar el Modo:** Elige en la barra lateral si operas **Futuros / Índices** (con multiplicador) o **Acciones / Small Caps** (multiplicador 1:1).
-    2. **Configurar el Ticker:** Ingresa el ETF o acción con opciones líquidas (ej. `QQQ`, `IWM` para small caps, o `AAPL`).
-    3. **Seleccionar Vencimientos:** Marca los **3 o 4 vencimientos más cercanos** para capturar con precisión el flujo institucional de corto plazo (*Open Interest*).
-    4. **Ajustar el Zoom para Móvil:** Usa el deslizador de rango en la barra lateral (un valor de **±3%** es ideal para evitar amontonamientos).
-
-    ### 🎯 Claves de Interpretación
-    * **Put Wall (Soporte Principal 🟢):** Zona masiva de cobertura bajista. Alta probabilidad de rebote institucional.
-    * **Call Wall (Techo de Resistencia 🔴):** Resistencia magnética de corto plazo; ideal para tomas de beneficios.
-    * **Gamma Flip (Pivote 🟣):** Frontera de régimen. Por encima = mercado en rango (estabilizador). Por debajo = mercado direccional y volátil.
+    ### 🛠️ Mejoras del Gráfico y Operativa
+    1. **Presets Rápidos:** Puedes elegir un activo preconfigurado (Small Caps como `IWM` o tecnológicas como `TSLA`, `NVDA`) o introducir uno libremente.
+    2. **Filtro de Ruido (OI Mínimo):** Excluye strikes con poco interés abierto para que los muros institucionales resalten limpios en el gráfico.
+    3. **Nuevo Eje Gráfico:** Las barras horizontales se han optimizado para evitar solapamientos y mejorar la lectura visual en dispositivos móviles.
     """, unsafe_allow_html=True)
-# ------------------------------
 
 with st.sidebar:
     st.header("⚙️ Configuración del Activo")
     
-    # NUEVO: Selector de Modo (Futuros vs Acciones/Small Caps)
-    modo_operativa = st.selectbox("Modo de Operativa", ["📈 Futuros / Índices", "📉 Acciones / Small Caps (Directas)"])
+    modo_operativa = st.selectbox("Modo de Operativa", ["📉 Acciones / Small Caps (Directas)", "📈 Futuros / Índices"])
     
+    # Presets útiles de acciones, small caps e índices
+    preset_opciones = st.selectbox(
+        "Presets de Activos Populares", 
+        ["Personalizado", "IWM (Russell 2000 - Small Caps)", "QQQ (Nasdaq 100)", "SPY (S&P 500)", "TSLA (Tesla)", "NVDA (Nvidia)", "GME (GameStop)"]
+    )
+    
+    if preset_opciones != "Personalizado":
+        # Extraer el ticker base del preset
+        default_ticker = preset_opciones.split(" ")[0]
+    else:
+        default_ticker = "IWM" if "Small Caps" in modo_operativa else "QQQ"
+
     if "Futuros" in modo_operativa:
-        etf_ticker = st.text_input("Ticker de Opciones (Ej: QQQ, SPY)", value="QQQ").upper()
+        etf_ticker = st.text_input("Ticker de Opciones", value=default_ticker).upper()
         fut_ticker = st.text_input("Ticker del Futuro / Activo", value="MNQ=F").upper()
         multiplier_base = st.number_input("Multiplicador de Conversión", value=40.0, step=0.1)
     else:
-        etf_ticker = st.text_input("Ticker de la Small Cap / Acciones", value="IWM").upper()
-        fut_ticker = etf_ticker  # Se auto-iguala al mismo ticker
-        multiplier_base = 1.0    # Se fija automáticamente a 1.0 para lectura directa
-        st.info("💡 **Modo Small Cap Activo:** Multiplicador ajustado a 1.0 de forma automática.")
+        etf_ticker = st.text_input("Ticker de la Small Cap / Acción", value=default_ticker).upper()
+        fut_ticker = etf_ticker  
+        multiplier_base = 1.0    
+        st.info("💡 **Modo Small Cap:** Multiplicador a 1:1.")
 
     try:
         _, _, spot_fut_live, expirations = fetch_market_data(etf_ticker, fut_ticker)
@@ -170,8 +174,9 @@ with st.sidebar:
     metric_view = st.selectbox("Métrica Principal", ["Gamma Exposure (GEX)", "Delta Exposure (DEX)"])
     
     st.markdown("---")
-    st.subheader("📱 Zoom Óptimo para Móvil")
-    range_pct = st.slider("Rango de Strikes (±%)", 0.5, 10.0, 3.0, step=0.5) / 100.0
+    st.subheader("🧹 Filtros y Zoom Móvil")
+    min_open_interest = st.number_input("Open Interest Mínimo por Strike", value=10, step=10, help="Filtra strikes basura sin contratos abiertos.")
+    range_pct = st.slider("Rango de Strikes (±%)", 0.5, 15.0, 4.0, step=0.5) / 100.0
     
     selected_expirations = []
     if expirations is not None and len(expirations) > 0:
@@ -185,15 +190,15 @@ if calcular_btn:
     st.session_state['loaded'] = True
 
 if st.session_state.get('loaded', False) and selected_expirations:
-    with st.spinner(f"Procesando flujos para {etf_ticker}..."):
+    with st.spinner(f"Procesando flujos y optimizando gráfico para {etf_ticker}..."):
         tk_etf, spot_etf, _, _ = fetch_market_data(etf_ticker, fut_ticker)
         
         df_metrics, call_wall, put_wall, gamma_flip, total_gex, spot_fut, iv_skew = process_multi_expiry_metrics(
-            tk_etf, selected_expirations, spot_etf, target_future_price, multiplier_base, interest_rate
+            tk_etf, selected_expirations, spot_etf, target_future_price, multiplier_base, min_open_interest, interest_rate
         )
         
         if df_metrics.empty:
-            st.warning("No hay suficiente información disponible para este ticker.")
+            st.warning("No hay suficiente información disponible o el filtro de Open Interest es muy alto para este ticker.")
         else:
             min_strike = spot_fut * (1 - range_pct)
             max_strike = spot_fut * (1 + range_pct)
@@ -248,33 +253,52 @@ if st.session_state.get('loaded', False) and selected_expirations:
             
             col_target = 'gex' if "Gamma" in metric_view else 'dex'
             
+            # --- NUEVO MOTOR DE GRÁFICO OPTIMIZADO ---
             fig = go.Figure()
+            
+            # Barras principales
             fig.add_trace(go.Bar(
                 x=df_filtered[col_target],
                 y=df_filtered['strike'],
                 orientation='h',
                 name=metric_view,
-                marker=dict(color=np.where(df_filtered[col_target] >= 0, '#00b4d8', '#ef476f'))
+                marker=dict(
+                    color=np.where(df_filtered[col_target] >= 0, '#00b4d8', '#ef476f'),
+                    line=dict(color='rgba(255,255,255,0.1)', width=0.5)
+                )
             ))
             
-            fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f"Spot: {spot_fut:.2f}", annotation_position="top right", annotation_font_color="white")
-            fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#a855f7", annotation_text=f"Flip: {gamma_flip:.2f}", annotation_position="bottom right", annotation_font_color="#a855f7")
-            fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", annotation_text=f"Call Wall: {call_wall:.2f}", annotation_position="top left", annotation_font_color="#22c55e")
-            fig.add_hline(y=put_wall, line_dash="solid", line_color="#ef4444", annotation_text=f"Put Wall: {put_wall:.2f}", annotation_position="bottom left", annotation_font_color="#ef4444")
+            # Líneas de referencia con anclajes limpios
+            fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f" Spot: {spot_fut:.2f} ", annotation_position="top right", annotation_font_color="white")
+            fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#a855f7", annotation_text=f" Flip: {gamma_flip:.2f} ", annotation_position="bottom right", annotation_font_color="#a855f7")
+            fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", annotation_text=f" Call Wall: {call_wall:.2f} ", annotation_position="top left", annotation_font_color="#22c55e")
+            fig.add_hline(y=put_wall, line_dash="solid", line_color="#ef4444", annotation_text=f" Put Wall: {put_wall:.2f} ", annotation_position="bottom left", annotation_font_color="#ef4444")
             
+            # Configuración estructural del layout para evitar aplastamientos
             fig.update_layout(
                 title=f"Perfil de {metric_view} (Zoom Móvil ±{int(range_pct*100)}%)",
-                xaxis_title=f'Exposición Neta',
-                yaxis_title='Strike',
-                height=650, template="plotly_dark", plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                font=dict(color="#ffffff", size=11), title_font=dict(size=16, color="#ffffff"),
-                xaxis=dict(showgrid=True, gridcolor='#30363d'), yaxis=dict(showgrid=True, gridcolor='#30363d', autorange="reversed"),
+                xaxis_title='Exposición Neta ($)',
+                yaxis_title='Niveles de Strike',
+                height=700, 
+                template="plotly_dark", 
+                plot_bgcolor='rgba(0,0,0,0)', 
+                paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(color="#ffffff", size=12), 
+                title_font=dict(size=16, color="#ffffff"),
+                xaxis=dict(showgrid=True, gridcolor='#30363d', zeroline=True, zerolinecolor='#ffffff'), 
+                yaxis=dict(
+                    showgrid=True, 
+                    gridcolor='#30363d', 
+                    autorange="reversed",  # Mantiene precios altos arriba y bajos abajo de forma natural
+                    tickformat=".2f"
+                ),
                 showlegend=False,
-                margin=dict(l=10, r=10, t=40, b=10)
+                margin=dict(l=20, r=20, t=50, b=20)
             )
-            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False})
+            
+            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True, 'modeBarButtonsToRemove': ['lasso2d', 'select2d']})
             
             with st.expander("🔍 Ver desglose tabular completo"):
                 st.dataframe(df_filtered.style.format({'strike': '{:,.2f}', 'gex': '${:,.2f}', 'dex': '${:,.2f}'}), use_container_width=True)
 else:
-    st.info("👈 Configura los parámetros en la barra lateral y pulsa **Actualizar Terminal**.")
+    st.info("👈 Selecciona un activo preconfigurado o ajusta los parámetros en la barra lateral y pulsa **Actualizar Terminal**.")
