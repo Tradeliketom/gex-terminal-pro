@@ -225,7 +225,6 @@ else:
             if df_metrics.empty:
                 st.warning("No hay datos suficientes para los filtros seleccionados.")
             else:
-                # Aseguramos que el rango cubra al menos los muros clave para que no desaparezcan nunca del gráfico
                 min_strike = min(spot_fut * (1 - range_pct), put_wall * 0.99)
                 max_strike = max(spot_fut * (1 + range_pct), call_wall * 1.01)
                 
@@ -261,7 +260,7 @@ else:
                     </div>
                 """, unsafe_allow_html=True)
 
-                # --- GRÁFICOS GEX Y DEX CON LÍNEAS Y PRECIOS EXPLICITOS ---
+                # --- GRÁFICOS GEX Y DEX CON LÍNEAS DISTRIBUIDAS (IZQUIERDA Y DERECHA) ---
                 col_gex, col_dex = st.columns(2)
                 
                 with col_gex:
@@ -274,11 +273,13 @@ else:
                         marker=dict(color=np.where(df_filtered['gex'] >= 0, '#00b4d8', '#ff4d6d'))
                     ))
                     
-                    # Líneas y precios exactos en etiquetas
+                    # Spot y Zero Gamma a la DERECHA
                     fig_gex.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f"Spot: {spot_fut:,.2f}", annotation_position="top right")
-                    fig_gex.add_hline(y=gamma_flip, line_dash="dot", line_color="#c084fc", annotation_text=f"Zero Gamma: {gamma_flip:,.2f}", annotation_position="top right")
-                    fig_gex.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", annotation_text=f"Call Wall: {call_wall:,.2f}", annotation_position="bottom right")
-                    fig_gex.add_hline(y=put_wall, line_dash="solid", line_color="#ef476f", annotation_text=f"Put Wall: {put_wall:,.2f}", annotation_position="bottom right")
+                    fig_gex.add_hline(y=gamma_flip, line_dash="dot", line_color="#c084fc", annotation_text=f"Zero Gamma: {gamma_flip:,.2f}", annotation_position="bottom right")
+                    
+                    # Call Wall y Put Wall a la IZQUIERDA
+                    fig_gex.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", annotation_text=f"Call Wall: {call_wall:,.2f}", annotation_position="top left")
+                    fig_gex.add_hline(y=put_wall, line_dash="solid", line_color="#ef476f", annotation_text=f"Put Wall: {put_wall:,.2f}", annotation_position="bottom left")
                     
                     fig_gex.update_layout(
                         height=600, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
@@ -297,6 +298,7 @@ else:
                         orientation='h',
                         marker=dict(color=np.where(df_filtered['dex'] >= 0, '#22c55e', '#ef476f'))
                     ))
+                    # Spot a la DERECHA en DEX también
                     fig_dex.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f"Spot: {spot_fut:,.2f}", annotation_position="top right")
                     fig_dex.update_layout(
                         height=600, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
