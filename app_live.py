@@ -214,7 +214,7 @@ if app_mode == "🔥 Screener Small Caps & Momentum":
             st.success(f"¡Filtros aplicados con éxito! Se encontraron **{len(df_screener)} Small Caps** activas cumpliendo los criterios.")
             
             st.dataframe(
-                df_screener.style.applymap(
+                df_screener.style.map(
                     lambda v: 'color: #22c55e; font-weight: bold;' if 'LONG' in str(v) else ('color: #ef476f; font-weight: bold;' if 'SHORT' in str(v) else ''),
                     subset=['Señal Táctica']
                 ),
