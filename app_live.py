@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS PERSONALIZADO (Arreglo menú móvil y contraste) ---
+# --- CSS PERSONALIZADO ---
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
@@ -23,7 +23,6 @@ st.markdown("""
     h1, h2, h3, p, span, label { color: #ffffff !important; }
     [data-testid="stSidebar"] { background-color: #0d1117; border-right: 1px solid #30363d; }
     
-    /* FORZAR VISIBILIDAD DE LAS 3 BARRAS DEL MENÚ MÓVIL Y HEADER */
     [data-testid="stHeader"] { background-color: rgba(0,0,0,0); }
     [data-testid="stToolbar"] { right: 2rem; }
     svg[data-baseweb="icon"] { stroke: #ffffff !important; fill: #ffffff !important; }
@@ -126,14 +125,13 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
 st.title("⚡ GEX & DEX Institutional Terminal Pro")
 st.markdown("Terminal cuantitativa multi-expiración adaptada para **móvil, índices y small caps**.")
 
-# --- GUÍA RÁPIDA INTEGRADA ---
 with st.expander("📖 GUÍA RÁPIDA: Cómo operar la terminal y configurar parámetros", expanded=False):
     st.markdown("""
     ### 🛠️ Mejoras del Gráfico y Operativa
-    1. **Presets Rápidos:** Elige un activo preconfigurado (Small Caps como `IWM` o tecnológicas como `TSLA`, `NVDA`) o introduce uno libremente.
-    2. **Filtro de Ruido (OI Mínimo):** Excluye strikes con poco interés abierto para limpiar los muros.
-    3. **Modo Pan (Mano) por Defecto:** Al entrar, el gráfico se desplaza de forma fluida con el dedo o ratón sin activar la caja de zoom rectangular.
-    4. **Put Wall Contrastado:** La línea del Put Wall ahora usa un tono **naranja brillante** para evitar confusiones con las barras de GEX negativo.
+    1. **Presets Rápidos:** Elige un activo preconfigurado o introduce uno libremente.
+    2. **Filtro de Ruido (OI Mínimo):** Excluye strikes con poco interés abierto.
+    3. **Modo Pan (Mano) por Defecto:** Configurado directamente en el diseño del gráfico para desplazamiento fluido.
+    4. **Put Wall Contrastado:** Línea en **naranja brillante (`#ff9f1c`)** para destacar sobre las barras rojas.
     """, unsafe_allow_html=True)
 
 with st.sidebar:
@@ -159,7 +157,6 @@ with st.sidebar:
         etf_ticker = st.text_input("Ticker de la Small Cap / Acción", value=default_ticker).upper()
         fut_ticker = etf_ticker  
         multiplier_base = 1.0    
-        st.info("💡 **Modo Small Cap:** Multiplicador a 1:1.")
 
     try:
         _, _, spot_fut_live, expirations = fetch_market_data(etf_ticker, fut_ticker)
@@ -174,7 +171,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.subheader("🧹 Filtros y Zoom Móvil")
-    min_open_interest = st.number_input("Open Interest Mínimo por Strike", value=10, step=10, help="Filtra strikes sin contratos abiertos.")
+    min_open_interest = st.number_input("Open Interest Mínimo por Strike", value=10, step=10)
     range_pct = st.slider("Rango de Strikes (±%)", 0.5, 15.0, 4.0, step=0.5) / 100.0
     
     selected_expirations = []
@@ -252,7 +249,7 @@ if st.session_state.get('loaded', False) and selected_expirations:
             
             col_target = 'gex' if "Gamma" in metric_view else 'dex'
             
-            # --- NUEVO MOTOR DE GRÁFICO CON PAN Y PUT WALL EN NARANJA ---
+            # --- MOTOR DE GRÁFICO (DRAGMODE='PAN' CORREGIDO EN LAYOUT) ---
             fig = go.Figure()
             
             fig.add_trace(go.Bar(
@@ -266,14 +263,14 @@ if st.session_state.get('loaded', False) and selected_expirations:
                 )
             ))
             
-            # Líneas de referencia (Put Wall ahora en color naranja brillante #ff9f1c para destacar sobre rojo)
+            # Líneas de referencia (Put Wall en naranja brillante #ff9f1c)
             fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f" Spot: {spot_fut:.2f} ", annotation_position="top right", annotation_font_color="white")
             fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#a855f7", annotation_text=f" Flip: {gamma_flip:.2f} ", annotation_position="bottom right", annotation_font_color="#a855f7")
             fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", annotation_text=f" Call Wall: {call_wall:.2f} ", annotation_position="top left", annotation_font_color="#22c55e")
             fig.add_hline(y=put_wall, line_dash="solid", line_color="#ff9f1c", annotation_text=f" Put Wall: {put_wall:.2f} ", annotation_position="bottom left", annotation_font_color="#ff9f1c")
             
             fig.update_layout(
-                title=f"Perfil de {metric_view} (Zoom Móvil ±{int(range_pct*100)}%)",
+                title=f"Perfil de {metric_view} (Modo Pan Activo ±{int(range_pct*100)}%)",
                 xaxis_title='Exposición Neta ($)',
                 yaxis_title='Niveles de Strike',
                 height=700, 
@@ -282,6 +279,7 @@ if st.session_state.get('loaded', False) and selected_expirations:
                 paper_bgcolor='rgba(0,0,0,0)',
                 font=dict(color="#ffffff", size=12), 
                 title_font=dict(size=16, color="#ffffff"),
+                dragmode='pan',  # <--- AQUÍ ESTÁ LA CLAVE CORRECTA
                 xaxis=dict(showgrid=True, gridcolor='#30363d', zeroline=True, zerolinecolor='#ffffff'), 
                 yaxis=dict(
                     showgrid=True, 
@@ -293,15 +291,13 @@ if st.session_state.get('loaded', False) and selected_expirations:
                 margin=dict(l=20, r=20, t=50, b=20)
             )
             
-            # dragmode='pan' activa la mano para deslizar por defecto en lugar de la caja de zoom
             st.plotly_chart(
                 fig, 
                 use_container_width=True, 
                 config={
                     'scrollZoom': True, 
                     'displayModeBar': True, 
-                    'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
-                    'dragmode': 'pan'
+                    'modeBarButtonsToRemove': ['lasso2d', 'select2d']
                 }
             )
             
