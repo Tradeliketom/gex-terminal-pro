@@ -130,9 +130,10 @@ st.markdown("Terminal cuantitativa multi-expiración adaptada para **móvil, ín
 with st.expander("📖 GUÍA RÁPIDA: Cómo operar la terminal y configurar parámetros", expanded=False):
     st.markdown("""
     ### 🛠️ Mejoras del Gráfico y Operativa
-    1. **Presets Rápidos:** Puedes elegir un activo preconfigurado (Small Caps como `IWM` o tecnológicas como `TSLA`, `NVDA`) o introducir uno libremente.
-    2. **Filtro de Ruido (OI Mínimo):** Excluye strikes con poco interés abierto para que los muros institucionales resalten limpios en el gráfico.
-    3. **Nuevo Eje Gráfico:** Las barras horizontales se han optimizado para evitar solapamientos y mejorar la lectura visual en dispositivos móviles.
+    1. **Presets Rápidos:** Elige un activo preconfigurado (Small Caps como `IWM` o tecnológicas como `TSLA`, `NVDA`) o introduce uno libremente.
+    2. **Filtro de Ruido (OI Mínimo):** Excluye strikes con poco interés abierto para limpiar los muros.
+    3. **Modo Pan (Mano) por Defecto:** Al entrar, el gráfico se desplaza de forma fluida con el dedo o ratón sin activar la caja de zoom rectangular.
+    4. **Put Wall Contrastado:** La línea del Put Wall ahora usa un tono **naranja brillante** para evitar confusiones con las barras de GEX negativo.
     """, unsafe_allow_html=True)
 
 with st.sidebar:
@@ -140,14 +141,12 @@ with st.sidebar:
     
     modo_operativa = st.selectbox("Modo de Operativa", ["📉 Acciones / Small Caps (Directas)", "📈 Futuros / Índices"])
     
-    # Presets útiles de acciones, small caps e índices
     preset_opciones = st.selectbox(
         "Presets de Activos Populares", 
         ["Personalizado", "IWM (Russell 2000 - Small Caps)", "QQQ (Nasdaq 100)", "SPY (S&P 500)", "TSLA (Tesla)", "NVDA (Nvidia)", "GME (GameStop)"]
     )
     
     if preset_opciones != "Personalizado":
-        # Extraer el ticker base del preset
         default_ticker = preset_opciones.split(" ")[0]
     else:
         default_ticker = "IWM" if "Small Caps" in modo_operativa else "QQQ"
@@ -175,7 +174,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.subheader("🧹 Filtros y Zoom Móvil")
-    min_open_interest = st.number_input("Open Interest Mínimo por Strike", value=10, step=10, help="Filtra strikes basura sin contratos abiertos.")
+    min_open_interest = st.number_input("Open Interest Mínimo por Strike", value=10, step=10, help="Filtra strikes sin contratos abiertos.")
     range_pct = st.slider("Rango de Strikes (±%)", 0.5, 15.0, 4.0, step=0.5) / 100.0
     
     selected_expirations = []
@@ -253,10 +252,9 @@ if st.session_state.get('loaded', False) and selected_expirations:
             
             col_target = 'gex' if "Gamma" in metric_view else 'dex'
             
-            # --- NUEVO MOTOR DE GRÁFICO OPTIMIZADO ---
+            # --- NUEVO MOTOR DE GRÁFICO CON PAN Y PUT WALL EN NARANJA ---
             fig = go.Figure()
             
-            # Barras principales
             fig.add_trace(go.Bar(
                 x=df_filtered[col_target],
                 y=df_filtered['strike'],
@@ -268,13 +266,12 @@ if st.session_state.get('loaded', False) and selected_expirations:
                 )
             ))
             
-            # Líneas de referencia con anclajes limpios
+            # Líneas de referencia (Put Wall ahora en color naranja brillante #ff9f1c para destacar sobre rojo)
             fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f" Spot: {spot_fut:.2f} ", annotation_position="top right", annotation_font_color="white")
             fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#a855f7", annotation_text=f" Flip: {gamma_flip:.2f} ", annotation_position="bottom right", annotation_font_color="#a855f7")
             fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", annotation_text=f" Call Wall: {call_wall:.2f} ", annotation_position="top left", annotation_font_color="#22c55e")
-            fig.add_hline(y=put_wall, line_dash="solid", line_color="#ef4444", annotation_text=f" Put Wall: {put_wall:.2f} ", annotation_position="bottom left", annotation_font_color="#ef4444")
+            fig.add_hline(y=put_wall, line_dash="solid", line_color="#ff9f1c", annotation_text=f" Put Wall: {put_wall:.2f} ", annotation_position="bottom left", annotation_font_color="#ff9f1c")
             
-            # Configuración estructural del layout para evitar aplastamientos
             fig.update_layout(
                 title=f"Perfil de {metric_view} (Zoom Móvil ±{int(range_pct*100)}%)",
                 xaxis_title='Exposición Neta ($)',
@@ -289,14 +286,24 @@ if st.session_state.get('loaded', False) and selected_expirations:
                 yaxis=dict(
                     showgrid=True, 
                     gridcolor='#30363d', 
-                    autorange="reversed",  # Mantiene precios altos arriba y bajos abajo de forma natural
+                    autorange="reversed",
                     tickformat=".2f"
                 ),
                 showlegend=False,
                 margin=dict(l=20, r=20, t=50, b=20)
             )
             
-            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True, 'modeBarButtonsToRemove': ['lasso2d', 'select2d']})
+            # dragmode='pan' activa la mano para deslizar por defecto en lugar de la caja de zoom
+            st.plotly_chart(
+                fig, 
+                use_container_width=True, 
+                config={
+                    'scrollZoom': True, 
+                    'displayModeBar': True, 
+                    'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
+                    'dragmode': 'pan'
+                }
+            )
             
             with st.expander("🔍 Ver desglose tabular completo"):
                 st.dataframe(df_filtered.style.format({'strike': '{:,.2f}', 'gex': '${:,.2f}', 'dex': '${:,.2f}'}), use_container_width=True)
