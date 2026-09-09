@@ -260,10 +260,9 @@ else:
                     </div>
                 """, unsafe_allow_html=True)
 
-                # --- GRÁFICOS GEX Y DEX CON ETIQUETAS BLANCAS Y NIVELES EN AMBOS ---
+                # --- GRÁFICOS GEX Y DEX CON PAN POR DEFECTO Y ZOOM VERTICAL HABILITADO ---
                 col_gex, col_dex = st.columns(2)
                 
-                # Configuración común para las anotaciones con texto blanco y fondo oscuro legible
                 def add_chart_lines(fig):
                     # Call Wall y Put Wall a la IZQUIERDA
                     fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e",
@@ -301,13 +300,15 @@ else:
                     
                     add_chart_lines(fig_gex)
                     
+                    # dragmode="pan" para deslizar por defecto y fixedrange=False para permitir zoom/desliz en eje Y
                     fig_gex.update_layout(
                         height=600, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
-                        yaxis=dict(autorange="reversed", tickformat=",.2f", range=[max(df_filtered['strike']), min(df_filtered['strike'])]), 
-                        xaxis=dict(tickformat="$,.0f"),
+                        dragmode="pan",
+                        yaxis=dict(autorange="reversed", tickformat=",.2f", range=[max(df_filtered['strike']), min(df_filtered['strike'])], fixedrange=False), 
+                        xaxis=dict(tickformat="$,.0f", fixedrange=False),
                         margin=dict(l=10, r=10, t=30, b=10)
                     )
-                    st.plotly_chart(fig_gex, use_container_width=True)
+                    st.plotly_chart(fig_gex, use_container_width=True, config={"scrollZoom": True})
 
                 with col_dex:
                     st.subheader("📉 Delta Exposure (DEX)")
@@ -321,13 +322,15 @@ else:
                     
                     add_chart_lines(fig_dex)
                     
+                    # dragmode="pan" y fixedrange=False para el eje Y
                     fig_dex.update_layout(
                         height=600, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
-                        yaxis=dict(autorange="reversed", tickformat=",.2f", range=[max(df_filtered['strike']), min(df_filtered['strike'])]), 
-                        xaxis=dict(tickformat="$,.0f"),
+                        dragmode="pan",
+                        yaxis=dict(autorange="reversed", tickformat=",.2f", range=[max(df_filtered['strike']), min(df_filtered['strike'])], fixedrange=False), 
+                        xaxis=dict(tickformat="$,.0f", fixedrange=False),
                         margin=dict(l=10, r=10, t=30, b=10)
                     )
-                    st.plotly_chart(fig_dex, use_container_width=True)
+                    st.plotly_chart(fig_dex, use_container_width=True, config={"scrollZoom": True})
                 
                 st.caption(f"⚡ Streaming Activo | Última actualización: {datetime.now().strftime('%H:%M:%S')} — Recargando automáticamente cada **10 segundos**.")
 
