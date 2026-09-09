@@ -121,13 +121,21 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
     
     df = pd.DataFrame(all_results)
     df_grouped = df.groupby('strike')[['gex', 'dex']].sum().reset_index()
+    df_grouped = df_grouped.sort_values('strike').reset_index(drop=True)
     
     call_walls = df_grouped.loc[df_grouped['gex'].idxmax()]['strike']
     put_walls = df_grouped.loc[df_grouped['gex'].idxmin()]['strike']
     
+    # --- CÁLCULO ROBUSTO DE ZERO GAMMA CERCANO AL SPOT ---
     df_grouped['cumsum_gex'] = df_grouped['gex'].cumsum()
-    idx_flip = (df_grouped['gex'] * df_grouped['gex'].shift(-1) < 0).idxmax()
-    gamma_flip = df_grouped.loc[idx_flip, 'strike'] if not df_grouped.empty else target_future_price
+    sign_changes = (df_grouped['cumsum_gex'] * df_grouped['cumsum_gex'].shift(-1)) < 0
+    
+    if sign_changes.any():
+        valid_indices = sign_changes[sign_changes].index
+        closest_idx = min(valid_indices, key=lambda idx: abs(df_grouped.loc[idx, 'strike'] - target_future_price))
+        gamma_flip = df_grouped.loc[closest_idx, 'strike']
+    else:
+        gamma_flip = df_grouped.loc[(df_grouped['strike'] - target_future_price).abs().idxmin(), 'strike']
     
     avg_call_iv = np.mean(call_ivs) if call_ivs else 0.0
     avg_put_iv = np.mean(put_ivs) if put_ivs else 0.0
@@ -170,7 +178,6 @@ elif app_mode == "🔥 Screener Small Caps & Momentum":
     st.title("🔥 Screener de Small Caps, Float & Short Squeeze")
     st.markdown("Herramienta de análisis cuantitativo para identificar acciones de baja capitalización con alto potencial de momentum alcista.")
     
-    # Contenido funcional del screener para que no esté vacío
     col_s1, col_s2, col_s3 = st.columns(3)
     col_s1.selectbox("Filtrar por Mercado", ["NASDAQ / NYSE", "US Small Caps", "Penny Stocks"])
     col_s2.number_input("Float Máximo (Millones)", value=20.0, step=5.0)
@@ -178,7 +185,6 @@ elif app_mode == "🔥 Screener Small Caps & Momentum":
     
     st.info("💡 Consejo táctico: Busca empresas con un *Float* inferior a 15 millones de acciones y un *Short Interest* superior al 30% combinados con volumen inusual.")
     
-    # Tabla simulada de ejemplo operativo
     mock_screener_data = pd.DataFrame({
         "Ticker": ["GME", "AMC", "FFIE", "SPCE", "SAVA"],
         "Precio ($)": [24.50, 5.20, 0.45, 3.80, 18.20],
@@ -294,11 +300,28 @@ else:
                     </div>
                 """, unsafe_allow_html=True)
 
+                # --- EXTENSIÓN TRADINGVIEW PINE SCRIPT ---
+                with st.expander("🔗 Extensión TradingView: Ver Niveles en tus Gráficos", expanded=False):
+                    st.markdown("Copia este código **Pine Script v5** y pégalo en el editor de tu gráfico en TradingView para ver los muros institucionales en tiempo real:")
+                    
+                    pine_script_code = f"""// //@version=5
+indicator("GEX Levels Institutional Pro", overlay=true)
+
+call_wall = input.float({call_wall:.2f}, title="Call Wall")
+put_wall = input.float({put_wall:.2f}, title="Put Wall")
+gamma_flip = input.float({gamma_flip:.2f}, title="Zero Gamma")
+
+plot(call_wall, title="Call Wall", color=color.green, linewidth=2, style=plot.style_line)
+plot(put_wall, title="Put Wall", color=color.red, linewidth=2, style=plot.style_line)
+plot(gamma_flip, title="Zero Gamma", color=color.purple, linewidth=2, style=plot.style_dash)
+"""
+                    st.code(pine_script_code, language="pine")
+                    st.markdown(f"[Abrir TradingView Directamente](https://www.tradingview.com/chart/?symbol={fut_ticker})", unsafe_allow_html=True)
+
                 # --- GRÁFICOS GEX Y DEX CON PAN, ZOOM Y 4 ETIQUETAS BLANCAS EN AMBOS ---
                 col_gex, col_dex = st.columns(2)
                 
                 def add_chart_lines(fig):
-                    # Call Wall y Put Wall a la IZQUIERDA
                     fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e",
                                   annotation_text=f"Call Wall: {call_wall:,.2f}", 
                                   annotation_position="top left",
@@ -310,7 +333,6 @@ else:
                                   annotation_font=dict(color="white", size=11),
                                   annotation_bgcolor="#161b22")
                     
-                    # Spot y Zero Gamma a la DERECHA
                     fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166",
                                   annotation_text=f"Spot: {spot_fut:,.2f}", 
                                   annotation_position="top right",
@@ -366,7 +388,6 @@ else:
                 
                 st.caption(f"⚡ Streaming Activo | Última actualización: {datetime.now().strftime('%H:%M:%S')} — Recargando automáticamente cada **10 segundos**.")
 
-        # Bucle estricto de recarga automática cada 10 segundos
         if live_mode:
             time.sleep(10)
             st.rerun()
