@@ -37,7 +37,6 @@ def calculate_greeks(S, K, T, r, sigma):
     return gamma, call_delta, put_delta
 
 def fetch_market_data(etf_symbol, future_symbol):
-    # Obtener ETF para la cadena de opciones y Futuro para el precio real en tiempo real
     tk_etf = yf.Ticker(etf_symbol)
     tk_fut = yf.Ticker(future_symbol)
     
@@ -51,6 +50,8 @@ def fetch_market_data(etf_symbol, future_symbol):
 
 def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_future_price, multiplier_base, interest_rate=0.05):
     all_results = []
+    call_ivs = []
+    put_ivs = []
     
     for exp_date in expiration_dates:
         try:
@@ -65,6 +66,11 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
             for _, row in calls.iterrows():
                 K_etf, sigma, oi = row['strike'], row['impliedVolatility'], row['openInterest']
                 if pd.isna(sigma) or sigma == 0 or pd.isna(oi): continue
+                
+                # Capturar IVs cercanas al dinero para el Skew
+                if abs(K_etf - spot_etf) / spot_etf < 0.05:
+                    call_ivs.append(sigma)
+                    
                 K_fut = (K_etf * multiplier_base) + calibration_offset
                 gamma, call_delta, _ = calculate_greeks(spot_etf, K_etf, T, interest_rate, sigma)
                 
@@ -77,6 +83,10 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
             for _, row in puts.iterrows():
                 K_etf, sigma, oi = row['strike'], row['impliedVolatility'], row['openInterest']
                 if pd.isna(sigma) or sigma == 0 or pd.isna(oi): continue
+                
+                if abs(K_etf - spot_etf) / spot_etf < 0.05:
+                    put_ivs.append(sigma)
+                    
                 K_fut = (K_etf * multiplier_base) + calibration_offset
                 gamma, _, put_delta = calculate_greeks(spot_etf, K_etf, T, interest_rate, sigma)
                 
@@ -88,7 +98,7 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
         except Exception:
             continue
             
-    if not all_results: return pd.DataFrame(), 0, 0, 0, 0, target_future_price
+    if not all_results: return pd.DataFrame(), 0, 0, 0, 0, target_future_price, 0.0
     
     df = pd.DataFrame(all_results)
     df_grouped = df.groupby('strike')[['gex', 'dex']].sum().reset_index()
@@ -100,10 +110,22 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
     idx_flip = (df_grouped['gex'] * df_grouped['gex'].shift(-1) < 0).idxmax()
     gamma_flip = df_grouped.loc[idx_flip, 'strike'] if not df_grouped.empty else target_future_price
     
-    return df_grouped, call_wall, put_wall, gamma_flip, df['gex'].sum(), target_future_price
+    avg_call_iv = np.mean(call_ivs) if call_ivs else 0.0
+    avg_put_iv = np.mean(put_ivs) if put_ivs else 0.0
+    iv_skew = (avg_put_iv - avg_call_iv) * 100 # Skew en puntos porcentuales
+    
+    return df_grouped, call_wall, put_wall, gamma_flip, df['gex'].sum(), target_future_price, iv_skew
 
-st.title("⚡ GEX & DEX Institutional Terminal Pro (Live)")
-st.markdown("Terminal cuantitativa multi-expiración con precios en tiempo real para **MNQ / MES**.")
+st.title("⚡ GEX & DEX Institutional Terminal Pro")
+st.markdown("Terminal cuantitativa multi-expiración avanzada para trading de futuros (**MNQ / MES**).")
+
+with st.expander("📖 GUÍA TÁCTICA: Muros Institucionales y Régimen de Gamma", expanded=False):
+    st.markdown("""
+    * **Put Wall (Soporte Principal 🟢):** Zona de cobertura masiva de puts. Alta probabilidad de rebote institucional.
+    * **Call Wall (Techo de Resistencia 🔴):** Resistencia magnética de corto plazo; ideal para tomas de beneficios.
+    * **Gamma Flip (Pivote 🟣):** Frontera de régimen. Por encima = mercado en rango (estabilizador). Por debajo = mercado direccional y volátil.
+    * **IV Skew (Sesgo):** Si las Puts encarecen su volatilidad respecto a las Calls, alerta de cobertura bajista institucional.
+    """, unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("Configuración de Activo")
@@ -120,18 +142,20 @@ with st.sidebar:
         
     multiplier_base = st.number_input("Multiplicador Base", value=default_mult, step=0.1)
     
-    # Obtenemos datos en vivo para mostrar el precio actual automáticamente en la cajita
     try:
-        _, spot_etf_live, spot_fut_live, expirations = fetch_market_data(etf_ticker, fut_ticker)
+        _, _, spot_fut_live, expirations = fetch_market_data(etf_ticker, fut_ticker)
     except:
         spot_fut_live = 29000.0 if "MNQ" in asset_choice else 5900.0
         expirations = []
 
-    target_future_price = st.number_input("Precio Live del Futuro (Auto-detectado)", value=float(spot_fut_live), step=1.0, format="%.2f")
+    target_future_price = st.number_input("Precio Live del Futuro", value=float(spot_fut_live), step=1.0, format="%.2f")
     
     interest_rate = st.slider("Tasa Libre de Riesgo (%)", 0.0, 10.0, 5.0) / 100.0
     metric_view = st.selectbox("Métrica Principal", ["Gamma Exposure (GEX)", "Delta Exposure (DEX)"])
+    
     st.markdown("---")
+    st.subheader("Filtro de Rango (Zoom)")
+    range_pct = st.slider("Rango de Strikes (±%)", 1.0, 15.0, 5.0) / 100.0
     
     selected_expirations = []
     if expirations is not None and len(expirations) > 0:
@@ -139,43 +163,56 @@ with st.sidebar:
         default_selection = list(expirations[:3])
         selected_expirations = st.multiselect("Vencimientos (Agregado)", expirations, default=default_selection)
         
-    calcular_btn = st.button("🔄 Actualizar y Calcular en Vivo")
+    calcular_btn = st.button("🚀 Actualizar Terminal Institucional")
 
 if calcular_btn:
     st.session_state['loaded'] = True
 
 if st.session_state.get('loaded', False) and selected_expirations:
-    with st.spinner(f"Conectando al mercado en tiempo real para {asset_choice}..."):
+    with st.spinner(f"Procesando flujos institucionales para {asset_choice}..."):
         tk_etf, spot_etf, _, _ = fetch_market_data(etf_ticker, fut_ticker)
         
-        df_metrics, call_wall, put_wall, gamma_flip, total_gex, spot_fut = process_multi_expiry_metrics(
+        df_metrics, call_wall, put_wall, gamma_flip, total_gex, spot_fut, iv_skew = process_multi_expiry_metrics(
             tk_etf, selected_expirations, spot_etf, target_future_price, multiplier_base, interest_rate
         )
         
         if df_metrics.empty:
             st.warning("No hay suficiente información para las fechas seleccionadas.")
         else:
-            st.markdown(f"### 📊 Dashboard en Vivo [{asset_choice}] &nbsp;&nbsp;|&nbsp;&nbsp; *Actualizado: {datetime.now().strftime('%H:%M:%S')}*")
+            # Filtrar por rango dinámico (Zoom) alrededor del precio del futuro
+            min_strike = spot_fut * (1 - range_pct)
+            max_strike = spot_fut * (1 + range_pct)
+            df_filtered = df_metrics[(df_metrics['strike'] >= min_strike) & (df_metrics['strike'] <= max_strike)].copy()
+            
+            if df_filtered.empty:
+                df_filtered = df_metrics # fallback si el rango es muy estrecho
+                
+            # Determinar régimen de gamma
+            regimen = "🟢 GAMMA POSITIVO (Rango / Rebotes)" if spot_fut >= gamma_flip else "🔴 GAMMA NEGATIVO (Direccional / Volátil)"
+            
+            st.markdown(f"### 📊 Dashboard Institucional [{asset_choice}] &nbsp;&nbsp;|&nbsp;&nbsp; *Actualizado: {datetime.now().strftime('%H:%M:%S')}*")
             
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("Precio Spot Futuro", f"{spot_fut:,.2f}")
             c2.metric("Gamma Flip (Pivot)", f"{gamma_flip:,.2f}")
             c3.metric("Call Wall (Techo)", f"{call_wall:,.2f}", delta="Resistencia", delta_color="inverse")
             c4.metric("Put Wall (Suelo)", f"{put_wall:,.2f}", delta="Soporte")
-            c5.metric("GEX Neto Global", f"${total_gex:,.0f}")
+            c5.metric("IV Skew (Puts-Calls)", f"{iv_skew:+.2f}%")
             
+            # Semáforo de Régimen de Gamma
+            st.info(f"**Régimen de Mercado Actual:** {regimen}")
             st.markdown("---")
             
             col_target = 'gex' if "Gamma" in metric_view else 'dex'
-            df_metrics['Color'] = np.where(df_metrics[col_target] >= 0, 'Positivo', 'Negativo')
+            df_filtered['Color'] = np.where(df_filtered[col_target] >= 0, 'Positivo', 'Negativo')
             
             fig = go.Figure()
             fig.add_trace(go.Bar(
-                x=df_metrics[col_target],
-                y=df_metrics['strike'],
+                x=df_filtered[col_target],
+                y=df_filtered['strike'],
                 orientation='h',
                 name=metric_view,
-                marker=dict(color=np.where(df_metrics[col_target] >= 0, '#00b4d8', '#ef476f'))
+                marker=dict(color=np.where(df_filtered[col_target] >= 0, '#00b4d8', '#ef476f'))
             ))
             
             fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f"Spot Fut: {spot_fut:.2f}", annotation_position="top right", annotation_font_color="white")
@@ -184,7 +221,7 @@ if st.session_state.get('loaded', False) and selected_expirations:
             fig.add_hline(y=put_wall, line_dash="solid", line_color="#ef4444", annotation_text=f"Put Wall: {put_wall:.2f}", annotation_position="bottom left", annotation_font_color="#ef4444")
             
             fig.update_layout(
-                title=f"Perfil Institucional en Vivo ({len(selected_expirations)} Vencimientos) — {asset_choice}",
+                title=f"Perfil de {metric_view} (Zoom ±{int(range_pct*100)}%) — {asset_choice}",
                 xaxis_title=f'Exposición Neta (${metric_view})',
                 yaxis_title='Nivel de Strike Calibrado',
                 height=850, template="plotly_dark", plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
@@ -195,6 +232,6 @@ if st.session_state.get('loaded', False) and selected_expirations:
             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
             
             with st.expander("🔍 Ver desglose tabular completo por Strike"):
-                st.dataframe(df_metrics.style.format({'strike': '{:,.2f}', 'gex': '${:,.2f}', 'dex': '${:,.2f}'}), use_container_width=True)
+                st.dataframe(df_filtered.style.format({'strike': '{:,.2f}', 'gex': '${:,.2f}', 'dex': '${:,.2f}'}), use_container_width=True)
 else:
-    st.info("👈 Selecciona los vencimientos y haz clic en **Actualizar y Calcular en Vivo** para obtener los precios actuales del mercado.")
+    st.info("👈 Selecciona los vencimientos, ajusta el rango de zoom en la barra lateral y haz clic en **Actualizar Terminal Institucional**.")
