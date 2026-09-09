@@ -60,15 +60,15 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
     call_ivs = []
     put_ivs = []
     
+    calculated_base_fut = spot_etf * multiplier_base
+    calibration_offset = target_future_price - calculated_base_fut
+    
     for exp_date in expiration_dates:
         try:
             opt = tk_etf.option_chain(exp_date)
             calls, puts = opt.calls.copy(), opt.puts.copy()
             exp_dt = datetime.strptime(exp_date, "%Y-%m-%d")
             T = max((exp_dt - datetime.now()).days / 365.0, 1/365.0)
-            
-            calculated_base_fut = spot_etf * multiplier_base
-            calibration_offset = target_future_price - calculated_base_fut
             
             for _, row in calls.iterrows():
                 K_etf, sigma, oi = row['strike'], row['impliedVolatility'], row['openInterest']
@@ -104,7 +104,7 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
         except Exception:
             continue
             
-    if not all_results: return pd.DataFrame(), 0, 0, 0, 0, target_future_price, 0.0
+    if not all_results: return pd.DataFrame(), 0, 0, 0, 0, target_future_price, 0.0, calculated_base_fut, calibration_offset
     
     df = pd.DataFrame(all_results)
     df_grouped = df.groupby('strike')[['gex', 'dex']].sum().reset_index()
@@ -120,7 +120,7 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
     avg_put_iv = np.mean(put_ivs) if put_ivs else 0.0
     iv_skew = (avg_put_iv - avg_call_iv) * 100
     
-    return df_grouped, call_wall, put_wall, gamma_flip, df['gex'].sum(), target_future_price, iv_skew
+    return df_grouped, call_wall, put_wall, gamma_flip, df['gex'].sum(), target_future_price, iv_skew, calculated_base_fut, calibration_offset
 
 st.title("⚡ GEX & DEX Institutional Terminal Pro")
 st.markdown("Terminal cuantitativa multi-expiración adaptada para **móvil, índices y small caps**.")
@@ -201,7 +201,7 @@ if st.session_state.get('loaded', False) and selected_expirations:
     with st.spinner(f"Procesando flujos y optimizando gráfico para {etf_ticker}..."):
         tk_etf, spot_etf, _, _ = fetch_market_data(etf_ticker, fut_ticker)
         
-        df_metrics, call_wall, put_wall, gamma_flip, total_gex, spot_fut, iv_skew = process_multi_expiry_metrics(
+        df_metrics, call_wall, put_wall, gamma_flip, total_gex, spot_fut, iv_skew, calc_base, cal_offset = process_multi_expiry_metrics(
             tk_etf, selected_expirations, spot_etf, target_future_price, multiplier_base, min_open_interest, interest_rate
         )
         
@@ -252,6 +252,14 @@ if st.session_state.get('loaded', False) and selected_expirations:
             c4.metric("Put Wall", f"{put_wall:,.2f}", delta="Soporte")
             c5.metric("IV Skew", f"{iv_skew:+.2f}%")
             
+            # --- NUEVO: DESGLOSE DE EQUIVALENCIAS Y MULTIPLICADOR ---
+            with st.expander("⚙️ Ver detalles de Conversión y Multiplicador Activo", expanded=False):
+                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                col_m1.metric("Spot ETF Subyacente", f"{spot_etf:,.2f}")
+                col_m2.metric("Multiplicador Base", f"{multiplier_base:,.2f}")
+                col_m3.metric("Base Calculada", f"{calc_base:,.2f}")
+                col_m4.metric("Offset de Calibración", f"{cal_offset:+,.2f}")
+            
             st.markdown("---")
             
             col_target = 'gex' if "Gamma" in metric_view else 'dex'
@@ -270,7 +278,6 @@ if st.session_state.get('loaded', False) and selected_expirations:
                 )
             ))
             
-            # Líneas de referencia (Put Wall en naranja brillante #ff9f1c)
             fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f" Spot: {spot_fut:.2f} ", annotation_position="top right", annotation_font_color="white")
             fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#a855f7", annotation_text=f" Flip: {gamma_flip:.2f} ", annotation_position="bottom right", annotation_font_color="#a855f7")
             fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", annotation_text=f" Call Wall: {call_wall:.2f} ", annotation_position="top left", annotation_font_color="#22c55e")
@@ -286,7 +293,7 @@ if st.session_state.get('loaded', False) and selected_expirations:
                 paper_bgcolor='rgba(0,0,0,0)',
                 font=dict(color="#ffffff", size=12), 
                 title_font=dict(size=16, color="#ffffff"),
-                dragmode='pan',  # <--- MODO PAN CORREGIDO
+                dragmode='pan',
                 xaxis=dict(showgrid=True, gridcolor='#30363d', zeroline=True, zerolinecolor='#ffffff'), 
                 yaxis=dict(
                     showgrid=True, 
