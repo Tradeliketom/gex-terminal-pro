@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 from scipy.stats import norm
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import yfinance as yf
 from datetime import datetime
 import time
@@ -93,8 +92,6 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
                     
                 K_fut = (K_etf * multiplier_base) + calibration_offset
                 gamma, call_delta, _ = calculate_greeks(spot_etf, K_etf, T, interest_rate, sigma)
-                
-                # Ponderación GEX combinando OI y volumen intradía
                 effective_weight = oi + (0.2 * (vol if not pd.isna(vol) else 0))
                 
                 all_results.append({
@@ -112,7 +109,6 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
                     
                 K_fut = (K_etf * multiplier_base) + calibration_offset
                 gamma, _, put_delta = calculate_greeks(spot_etf, K_etf, T, interest_rate, sigma)
-                
                 effective_weight = oi + (0.2 * (vol if not pd.isna(vol) else 0))
                 
                 all_results.append({
@@ -147,7 +143,7 @@ with st.sidebar:
     app_mode = st.radio(
         "Seleccionar Vista", 
         [
-            "📈 Terminal GEX / DEX En Directo (Live)", 
+            "📈 Terminal Precio en Directo (Live)", 
             "🔥 Screener Small Caps & Momentum", 
             "📚 Conceptos / Guía Táctica"
         ]
@@ -157,29 +153,16 @@ with st.sidebar:
 if app_mode == "📚 Conceptos / Guía Táctica":
     st.title("📚 Guía Táctica Institucional y Conceptos Clave")
     st.markdown("Manual completo de aprendizaje sobre flujos de opciones, estructuras de mercado y creadores de mercado.")
-    
-    tab_m1, tab_m2, tab_m3 = st.tabs(["🎯 Muros y Zero Gamma Level", "📐 Multiplicadores y Futuros", "📖 Glosario: Call, Put & Skew"])
-    
-    with tab_m1:
-        st.markdown("""
-            ### 🟣 Zero Gamma Level (Gamma Flip) & GEX En Directo
-            * **Zero Gamma Level:** Nivel donde el gamma neto cambia de signo. Por encima domina la estabilidad; por debajo domina la aceleración y el pánico.
-            * **Estilo Gexbot Live Feed:** Al integrar el volumen intradía junto al Open Interest, el perfil de GEX reacciona y se desplaza automáticamente conforme los contratos acumulan transacciones en tiempo real.
-        """)
-    with tab_m2:
-        st.markdown("### ⚙️ Equivalencias de Multiplicadores\nConsulta la relación entre ETFs y futuros como MNQ o MES.")
-    with tab_m3:
-        st.markdown("### 📖 Glosario Técnico\nDefiniciones clave de opciones financieras.")
+    st.markdown("### 🟣 Zero Gamma Level (Gamma Flip)\nNivel donde el gamma neto cambia de signo.")
 
 elif app_mode == "🔥 Screener Small Caps & Momentum":
     st.title("🔥 Screener de Small Caps, Float & Short Squeeze")
-    st.markdown("Filtra acciones en base a precio, volumen, float y opciones.")
-    st.info("Configura los parámetros en la barra lateral de la terminal principal o usa los filtros predeterminados.")
+    st.info("Configura los parámetros en la barra lateral.")
 
 else:
-    # --- VISTA TERMINAL EN DIRECTO (ESTILO GEXBOT) ---
-    st.title("⚡ GEX & DEX Institutional Terminal — Live Stream (10s)")
-    st.markdown("Terminal de flujo institucional con gráficos duales sincronizados y actualización automática cada 10 segundos.")
+    # --- VISTA TERMINAL DE PRECIO EN DIRECTO ---
+    st.title("⚡ Terminal de Precio en Directo — Live Stream (10s)")
+    st.markdown("Gráfico de velas con niveles institucionales calculados y actualización automática cada 10 segundos.")
 
     with st.sidebar:
         st.header("⚙️ Configuración Live")
@@ -215,9 +198,7 @@ else:
         live_mode = st.toggle("Activar Auto-Refresh (10s en Vivo)", value=True)
         
         intraday_interval = st.selectbox("Temporalidad Gráfico Intradía", ["1m", "5m", "15m"], index=1)
-        
         min_open_interest = st.number_input("Open Interest Mínimo", value=10, step=10)
-        range_pct = st.slider("Rango de Strikes (±%)", 0.5, 15.0, 4.0, step=0.5) / 100.0
         
         selected_expirations = []
         if expirations is not None and len(expirations) > 0:
@@ -231,7 +212,7 @@ else:
 
     if st.session_state.get('live_active', False) and selected_expirations:
         
-        with st.spinner("Sincronizando feed de mercado y calculando GEX dinámico..."):
+        with st.spinner("Sincronizando feed de mercado..."):
             tk_etf, spot_etf, _, _ = fetch_market_data(etf_ticker, fut_ticker)
             
             try:
@@ -249,11 +230,6 @@ else:
             if df_metrics.empty:
                 st.warning("No hay datos suficientes para los filtros seleccionados.")
             else:
-                min_strike = spot_fut * (1 - range_pct)
-                max_strike = spot_fut * (1 + range_pct)
-                df_filtered = df_metrics[(df_metrics['strike'] >= min_strike) & (df_metrics['strike'] <= max_strike)].copy()
-                if df_filtered.empty: df_filtered = df_metrics
-
                 tk_chart = yf.Ticker(fut_ticker)
                 df_hist_intra = tk_chart.history(period="1d", interval=intraday_interval)
                 if df_hist_intra.empty:
@@ -269,16 +245,9 @@ else:
                 
                 st.markdown("---")
 
-                # --- GRÁFICO COMBINADO ESTILO GEXBOT (Velas a la Izquierda / GEX Barras Horizontales a la Derecha) ---
-                fig = make_subplots(
-                    rows=1, cols=2, 
-                    column_widths=[0.55, 0.45], 
-                    shared_yaxes=True,
-                    horizontal_spacing=0.02,
-                    subplot_titles=(f"Evolución Precio ({intraday_interval})", "Perfil GEX por Strikes (Live)")
-                )
+                # --- GRÁFICO ÚNICO DE VELAS INTRADÍA A PANTALLA COMPLETA ---
+                fig = go.Figure()
 
-                # 1. Gráfico de Velas Intradía (Izquierda)
                 if not df_hist_intra.empty:
                     fig.add_trace(go.Candlestick(
                         x=df_hist_intra.index,
@@ -286,34 +255,19 @@ else:
                         low=df_hist_intra['Low'], close=df_hist_intra['Close'],
                         increasing_line_color='#22c55e', decreasing_line_color='#ef476f',
                         name="Precio"
-                    ), row=1, col=1)
+                    ))
 
-                # 2. Gráfico de Barras GEX (Derecha)
-                fig.add_trace(go.Bar(
-                    x=df_filtered['gex'],
-                    y=df_filtered['strike'],
-                    orientation='h',
-                    name="GEX",
-                    marker=dict(
-                        color=np.where(df_filtered['gex'] >= 0, '#00b4d8', '#ff4d6d'),
-                        line=dict(color='rgba(255,255,255,0.1)', width=1)
-                    ),
-                    hovertemplate='Strike: %{y:,.2f}<br>GEX: $%{x:,.0f}<extra></extra>'
-                ), row=1, col=2)
-
-                # Líneas horizontales de referencia en ambos subgráficos sincronizados
-                for c_idx in [1, 2]:
-                    fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", line_width=1.5, row=1, col=c_idx)
-                    fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#c084fc", line_width=1.5, row=1, col=c_idx)
-                    fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", line_width=1.5, row=1, col=c_idx)
-                    fig.add_hline(y=put_wall, line_dash="solid", line_color="#ff9f1c", line_width=1.5, row=1, col=c_idx)
+                # Líneas horizontales de referencia de niveles institucionales
+                fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", line_width=1.5, annotation_text=f"Spot: {spot_fut:.2f}", annotation_position="top right")
+                fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#c084fc", line_width=1.5, annotation_text=f"Zero Gamma: {gamma_flip:.2f}", annotation_position="top right")
+                fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", line_width=1.5, annotation_text=f"Call Wall: {call_wall:.2f}", annotation_position="bottom right")
+                fig.add_hline(y=put_wall, line_dash="solid", line_color="#ff9f1c", line_width=1.5, annotation_text=f"Put Wall: {put_wall:.2f}", annotation_position="bottom right")
 
                 fig.update_layout(
                     height=700, template="plotly_dark", plot_bgcolor='#0b0e14', paper_bgcolor='#0e1117',
                     font=dict(color="#ffffff", family="Arial, sans-serif", size=11),
                     xaxis=dict(showgrid=True, gridcolor='#21262d'),
-                    yaxis=dict(showgrid=True, gridcolor='#21262d', autorange="reversed", tickformat=",.2f"),
-                    xaxis2=dict(showgrid=True, gridcolor='#21262d', tickformat="$,.0f"),
+                    yaxis=dict(showgrid=True, gridcolor='#21262d', tickformat=",.2f"),
                     showlegend=False, margin=dict(l=20, r=20, t=40, b=20)
                 )
 
