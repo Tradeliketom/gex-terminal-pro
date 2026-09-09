@@ -125,13 +125,12 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
 st.title("⚡ GEX & DEX Institutional Terminal Pro")
 st.markdown("Terminal cuantitativa multi-expiración adaptada para **móvil, índices y small caps**.")
 
-with st.expander("📖 GUÍA RÁPIDA: Cómo operar la terminal y configurar parámetros", expanded=False):
+with st.expander("📖 GUÍA RÁPIDA: Cómo operar la terminal y el Semáforo", expanded=False):
     st.markdown("""
-    ### 🛠️ Mejoras del Gráfico y Operativa
-    1. **Presets Rápidos:** Elige un activo preconfigurado o introduce uno libremente.
-    2. **Filtro de Ruido (OI Mínimo):** Excluye strikes con poco interés abierto.
-    3. **Modo Pan (Mano) por Defecto:** Configurado directamente en el diseño del gráfico para desplazamiento fluido.
-    4. **Put Wall Contrastado:** Línea en **naranja brillante (`#ff9f1c`)** para destacar sobre las barras rojas.
+    ### 🚦 Semáforo de Dirección Táctica
+    * **🟢 POSICIÓN ALCISTA (LONG):** Ideal para buscar compras si el precio está cerca del suelo (Put Wall) o el régimen es estable.
+    * **🔴 POSICIÓN BAJISTA (SHORT):** Precaución o cortos si el precio perfora soportes o hay alta presión vendedora en DEX.
+    * **🟡 RANGO / ESPERAR:** El precio está en tierra de nadie; operar los rebotes de los extremos sin casarse con ninguna dirección.
     """, unsafe_allow_html=True)
 
 with st.sidebar:
@@ -203,9 +202,36 @@ if st.session_state.get('loaded', False) and selected_expirations:
             if df_filtered.empty:
                 df_filtered = df_metrics
                 
-            regimen = "🟢 GAMMA POSITIVO (Rango / Rebotes)" if spot_fut >= gamma_flip else "🔴 GAMMA NEGATIVO (Alta Volatilidad)"
+            # --- SEMÁFORO DE DIRECCIÓN AUTOMÁTICO ---
+            dist_to_put = (spot_fut - put_wall) / spot_fut * 100
+            dist_to_call = (call_wall - spot_fut) / spot_fut * 100
             
+            # Lógica simple del semáforo basada en proximidad a muros y régimen
+            if spot_fut <= put_wall * 1.003 or (spot_fut >= gamma_flip and dist_to_put < 1.5):
+                semaforo_emoji = "🟢"
+                semaforo_texto = "POSICIÓN ALCISTA (BUSCAR COMPRAS / LONG)"
+                semaforo_color = "#238636"
+                consejo_dir = "El precio está apoyado sobre el suelo institucional (Put Wall) o zona de rebote. Excelente zona para buscar largos con stop ceñido."
+            elif spot_fut >= call_wall * 0.997 or spot_fut < gamma_flip:
+                semaforo_emoji = "🔴"
+                semaforo_texto = "PRECAUCIÓN / SESGO BAJISTA (SHORT O COBERTURA)"
+                semaforo_color = "#da3633"
+                consejo_dir = "Zona de techo (Call Wall) o régimen de alta volatilidad. Evita comprar en altos; prioriza tomas de beneficios o cortos tácticos."
+            else:
+                semaforo_emoji = "🟡"
+                semaforo_texto = "MERCADO EN RANGO (ESPERAR EXTREMOS)"
+                semaforo_color = "#9e6a03"
+                consejo_dir = "El precio está en tierra de nadie entre el Put Wall y el Call Wall. No persigas el precio; opera solo si llega a los extremos."
+
             st.markdown(f"### 📊 Dashboard [{fut_ticker}] &nbsp;&nbsp;|&nbsp;&nbsp; *{datetime.now().strftime('%H:%M:%S')}*")
+            
+            # --- BLOQUE VISUAL DEL SEMÁFORO ---
+            st.markdown(f"""
+                <div style="background-color: #161b22; border-left: 6px solid {semaforo_color}; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="margin: 0; color: #ffffff !important;">{semaforo_emoji} Dirección Sugerida: {semaforo_texto}</h3>
+                    <p style="margin: 8px 0 0 0; color: #8b949e !important; font-size: 14px;">{consejo_dir}</p>
+                </div>
+            """, unsafe_allow_html=True)
             
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("Spot", f"{spot_fut:,.2f}")
@@ -214,42 +240,10 @@ if st.session_state.get('loaded', False) and selected_expirations:
             c4.metric("Put Wall", f"{put_wall:,.2f}", delta="Soporte")
             c5.metric("IV Skew", f"{iv_skew:+.2f}%")
             
-            st.info(f"**Régimen:** {regimen}")
-            
-            st.markdown("---")
-            st.markdown("### 🎯 Plan de Acción Táctico")
-            
-            dist_call_wall = (call_wall - spot_fut) / spot_fut * 100
-            dist_put_wall = (spot_fut - put_wall) / spot_fut * 100
-            
-            col_t1, col_t2 = st.columns(2)
-            
-            with col_t1:
-                st.markdown("#### 🧭 Sesgo Estructural")
-                if spot_fut >= gamma_flip:
-                    st.success("**Estrategia (Rango):** Buscar compras en soportes/Put Wall y tomas de beneficios en resistencias.")
-                else:
-                    st.error("**Estrategia (Direccional):** Entorno inestable. Seguir la tendencia de corto plazo.")
-                if iv_skew > 0:
-                    st.warning(f"**Alerta IV Skew (+{iv_skew:.1f}%):** Mayor demanda de cobertura bajista.")
-            
-            with col_t2:
-                st.markdown("#### 📍 Proximidad a Muros")
-                near_call = abs(spot_fut - call_wall) / spot_fut <= 0.004
-                near_put = abs(spot_fut - put_wall) / spot_fut <= 0.004
-                
-                if near_call:
-                    st.warning(f"⚠️ **¡Alerta Call Wall!** A **+{dist_call_wall:.2f}%** del techo ({call_wall:,.2f}).")
-                elif near_put:
-                    st.warning(f"⚠️ **¡Alerta Put Wall!** A **-{dist_put_wall:.2f}%** del suelo ({put_wall:,.2f}).")
-                else:
-                    st.info(f"ℹ️ Distancia Techo: **+{dist_call_wall:.2f}%** | Suelo: **-{dist_put_wall:.2f}%**")
-
             st.markdown("---")
             
             col_target = 'gex' if "Gamma" in metric_view else 'dex'
             
-            # --- MOTOR DE GRÁFICO (DRAGMODE='PAN' CORREGIDO EN LAYOUT) ---
             fig = go.Figure()
             
             fig.add_trace(go.Bar(
@@ -263,7 +257,6 @@ if st.session_state.get('loaded', False) and selected_expirations:
                 )
             ))
             
-            # Líneas de referencia (Put Wall en naranja brillante #ff9f1c)
             fig.add_hline(y=spot_fut, line_dash="dash", line_color="#ffd166", annotation_text=f" Spot: {spot_fut:.2f} ", annotation_position="top right", annotation_font_color="white")
             fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#a855f7", annotation_text=f" Flip: {gamma_flip:.2f} ", annotation_position="bottom right", annotation_font_color="#a855f7")
             fig.add_hline(y=call_wall, line_dash="solid", line_color="#22c55e", annotation_text=f" Call Wall: {call_wall:.2f} ", annotation_position="top left", annotation_font_color="#22c55e")
@@ -279,7 +272,7 @@ if st.session_state.get('loaded', False) and selected_expirations:
                 paper_bgcolor='rgba(0,0,0,0)',
                 font=dict(color="#ffffff", size=12), 
                 title_font=dict(size=16, color="#ffffff"),
-                dragmode='pan',  # <--- AQUÍ ESTÁ LA CLAVE CORRECTA
+                dragmode='pan',
                 xaxis=dict(showgrid=True, gridcolor='#30363d', zeroline=True, zerolinecolor='#ffffff'), 
                 yaxis=dict(
                     showgrid=True, 
