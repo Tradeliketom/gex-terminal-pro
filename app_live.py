@@ -126,14 +126,39 @@ def process_multi_expiry_metrics(tk_etf, expiration_dates, spot_etf, target_futu
     call_walls = df_grouped.loc[df_grouped['gex'].idxmax()]['strike']
     put_walls = df_grouped.loc[df_grouped['gex'].idxmin()]['strike']
     
-    # --- CÁLCULO ROBUSTO DE ZERO GAMMA CERCANO AL SPOT ---
+    # --- CÁLCULO MEJORADO Y ROBUSTO DE ZERO GAMMA (CON INTERPOLACIÓN LINEAL) ---
     df_grouped['cumsum_gex'] = df_grouped['gex'].cumsum()
-    sign_changes = (df_grouped['cumsum_gex'] * df_grouped['cumsum_gex'].shift(-1)) < 0
     
-    if sign_changes.any():
-        valid_indices = sign_changes[sign_changes].index
-        closest_idx = min(valid_indices, key=lambda idx: abs(df_grouped.loc[idx, 'strike'] - target_future_price))
-        gamma_flip = df_grouped.loc[closest_idx, 'strike']
+    # Filtrar una zona razonable alrededor del precio spot para evitar falsos cruces en los extremos
+    sub_df = df_grouped[(df_grouped['strike'] >= target_future_price * 0.8) & (df_grouped['strike'] <= target_future_price * 1.2)].copy()
+    if sub_df.empty:
+        sub_df = df_grouped.copy()
+        
+    sub_df['sign'] = np.sign(sub_df['cumsum_gex'])
+    sub_df['sign_change'] = sub_df['sign'].diff() != 0
+    
+    crossings = sub_df[sub_df['sign_change'] & (sub_df.index > 0)]
+    
+    if not crossings.empty:
+        # Encontrar el cruce más cercano al precio live actual
+        crossings['distance'] = (crossings['strike'] - target_future_price).abs()
+        best_crossing_idx = crossings['distance'].idxmin()
+        
+        # Obtener los puntos exactos para interpolación lineal
+        idx_loc = sub_df.index.get_loc(best_crossing_idx)
+        if idx_loc > 0:
+            x1 = sub_df.loc[idx_loc - 1, 'strike']
+            y1 = sub_df.loc[idx_loc - 1, 'cumsum_gex']
+            x2 = sub_df.loc[idx_loc, 'strike']
+            y2 = sub_df.loc[idx_loc, 'cumsum_gex']
+            
+            # Interpolación lineal donde cumsum_gex == 0
+            if y2 != y1:
+                gamma_flip = x1 - y1 * (x2 - x1) / (y2 - y1)
+            else:
+                gamma_flip = x2
+        else:
+            gamma_flip = sub_df.loc[best_crossing_idx, 'strike']
     else:
         gamma_flip = df_grouped.loc[(df_grouped['strike'] - target_future_price).abs().idxmin(), 'strike']
     
@@ -217,7 +242,7 @@ else:
             multiplier_base = st.number_input("Multiplicador de Conversión", value=40.0 if "QQQ" in default_ticker else 10.0, step=0.1)
         else:
             etf_ticker = st.text_input("Ticker de la Acción", value="GME").upper()
-            fut_ticker = etf_ticker  
+            fut_ticker = etf_ticker 
             multiplier_base = 1.0    
 
         try:
@@ -313,7 +338,7 @@ gamma_flip = input.float({gamma_flip:.2f}, title="Zero Gamma")
 
 plot(call_wall, title="Call Wall", color=color.green, linewidth=2, style=plot.style_line)
 plot(put_wall, title="Put Wall", color=color.red, linewidth=2, style=plot.style_line)
-plot(gamma_flip, title="Zero Gamma", color=color.purple, linewidth=2, style=plot.style_dash)
+plot(gamma_flip, title="Zero Gamma", color=color.purple, linewidth=2, style=plot.style_line)
 """
                     st.code(pine_script_code, language="pine")
                     st.markdown(f"[Abrir TradingView Directamente](https://www.tradingview.com/chart/?symbol={fut_ticker})", unsafe_allow_html=True)
