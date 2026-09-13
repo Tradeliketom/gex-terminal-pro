@@ -1,4 +1,13 @@
+import asyncio
 import streamlit as st
+
+# --- PARCHE PARA EVENT LOOP EN PYTHON 3.14 (Evita el RuntimeError en Streamlit) ---
+try:
+    asyncio.get_event_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -281,7 +290,6 @@ else:
         selected_expirations = []
         if expirations is not None and len(expirations) > 0:
             if "0DTE" in tipo_analisis:
-                # Filtrar fecha de hoy (formato IBKR suele ser YYYYMMDD o YYYY-MM-DD)
                 today_str1 = datetime.now().strftime("%Y%m%d")
                 today_str2 = datetime.now().strftime("%Y-%m-%d")
                 selected_expirations = [exp for exp in expirations if exp == today_str1 or exp == today_str2]
